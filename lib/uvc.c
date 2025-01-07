@@ -94,6 +94,8 @@ static const char *pu_control_name(uint8_t cs)
 struct uvc_device *uvc_open(const char *devname, struct uvc_stream *stream)
 {
 	struct uvc_device *dev;
+	
+	printf("uvc_open\n");
 
 	dev = malloc(sizeof *dev);
 	if (dev == NULL)
@@ -113,6 +115,8 @@ struct uvc_device *uvc_open(const char *devname, struct uvc_stream *stream)
 
 void uvc_close(struct uvc_device *dev)
 {
+	printf("uvc_close\n");
+	
 	v4l2_close(dev->vdev);
 	dev->vdev = NULL;
 
@@ -131,7 +135,9 @@ uvc_fill_streaming_control(struct uvc_device *dev,
 	const struct uvc_function_config_format *format;
 	const struct uvc_function_config_frame *frame;
 	unsigned int i;
-
+	
+	
+    printf("uvc_fill_streaming_control\n");
 	/*
 	 * Restrict the iformat, iframe and ival to valid values. Negative
 	 * values for iformat or iframe will result in the maximum valid value
@@ -264,6 +270,8 @@ uvc_events_process_class(struct uvc_device *dev,
 			 struct uvc_request_data *resp)
 {
 	unsigned int interface = ctrl->wIndex & 0xff;
+	
+	printf("uvc_events_process_class\n");
 
 	if ((ctrl->bRequestType & USB_RECIP_MASK) != USB_RECIP_INTERFACE)
 		return;
@@ -285,17 +293,18 @@ uvc_events_process_setup(struct uvc_device *dev,
 		"wLength %04x\n", ctrl->bRequestType, ctrl->bRequest,
 		ctrl->wValue, ctrl->wIndex, ctrl->wLength);
 
-	switch (ctrl->bRequestType & USB_TYPE_MASK) {
-	case USB_TYPE_STANDARD:
-		uvc_events_process_standard(dev, ctrl, resp);
-		break;
+	switch (ctrl->bRequestType & USB_TYPE_MASK)
+	{
+		case USB_TYPE_STANDARD:
+			uvc_events_process_standard(dev, ctrl, resp);
+			break;
 
-	case USB_TYPE_CLASS:
-		uvc_events_process_class(dev, ctrl, resp);
-		break;
+		case USB_TYPE_CLASS:
+			uvc_events_process_class(dev, ctrl, resp);
+			break;
 
-	default:
-		break;
+		default:
+			break;
 	}
 }
 
@@ -306,21 +315,22 @@ uvc_events_process_data(struct uvc_device *dev,
 	const struct uvc_streaming_control *ctrl =
 		(const struct uvc_streaming_control *)&data->data;
 	struct uvc_streaming_control *target;
+	
+	switch (dev->control)
+	{
+		case UVC_VS_PROBE_CONTROL:
+			printf("setting probe control, length = %d\n", data->length);
+			target = &dev->probe;
+			break;
 
-	switch (dev->control) {
-	case UVC_VS_PROBE_CONTROL:
-		printf("setting probe control, length = %d\n", data->length);
-		target = &dev->probe;
-		break;
+		case UVC_VS_COMMIT_CONTROL:
+			printf("setting commit control, length = %d\n", data->length);
+			target = &dev->commit;
+			break;
 
-	case UVC_VS_COMMIT_CONTROL:
-		printf("setting commit control, length = %d\n", data->length);
-		target = &dev->commit;
-		break;
-
-	default:
-		printf("setting unknown control, length = %d\n", data->length);
-		return;
+		default:
+			printf("setting unknown control, length = %d\n", data->length);
+			return;
 	}
 
 	uvc_fill_streaming_control(dev, target, ctrl->bFormatIndex,
@@ -373,26 +383,32 @@ static void uvc_events_process(void *d)
 	memset(&resp, 0, sizeof resp);
 	resp.length = -EL2HLT;
 
-	switch (v4l2_event.type) {
-	case UVC_EVENT_CONNECT:
-	case UVC_EVENT_DISCONNECT:
-		return;
+	switch (v4l2_event.type)
+	{
+		case UVC_EVENT_CONNECT:
+		case UVC_EVENT_DISCONNECT:
+			printf("uvc_events_process: UVC_EVENT_CONNECT or UVC_EVENT_DISCONNECT\n");
+			return;
 
-	case UVC_EVENT_SETUP:
-		uvc_events_process_setup(dev, &uvc_event->req, &resp);
-		break;
+		case UVC_EVENT_SETUP:
+			printf("uvc_events_process: UVC_EVENT_SETUP\n");
+			uvc_events_process_setup(dev, &uvc_event->req, &resp);
+			break;
 
-	case UVC_EVENT_DATA:
-		uvc_events_process_data(dev, &uvc_event->data);
-		return;
+		case UVC_EVENT_DATA:
+			printf("uvc_events_process: UVC_EVENT_DATA\n");
+			uvc_events_process_data(dev, &uvc_event->data);
+			return;
 
-	case UVC_EVENT_STREAMON:
-		uvc_stream_enable(dev->stream, 1);
-		return;
+		case UVC_EVENT_STREAMON:
+			printf("uvc_events_process: UVC_EVENT_STREAMON\n");
+			uvc_stream_enable(dev->stream, 1);
+			return;
 
-	case UVC_EVENT_STREAMOFF:
-		uvc_stream_enable(dev->stream, 0);
-		return;
+		case UVC_EVENT_STREAMOFF:
+			printf("uvc_events_process: UVC_EVENT_STREAMOFF\n");
+			uvc_stream_enable(dev->stream, 0);
+			return;
 	}
 
 	ret = ioctl(dev->vdev->fd, UVCIOC_SEND_RESPONSE, &resp);
@@ -410,6 +426,8 @@ static void uvc_events_process(void *d)
 void uvc_events_init(struct uvc_device *dev, struct events *events)
 {
 	struct v4l2_event_subscription sub;
+	
+	printf("uvc_events_init\n");
 
 	/* Default to the minimum values. */
 	uvc_fill_streaming_control(dev, &dev->probe, 1, 1, 0);
@@ -436,6 +454,8 @@ void uvc_set_config(struct uvc_device *dev, struct uvc_function_config *fc)
 
 int uvc_set_format(struct uvc_device *dev, struct v4l2_pix_format *format)
 {
+	printf("uvc_set_format\n");
+	
 	return v4l2_set_format(dev->vdev, format);
 }
 

@@ -43,6 +43,8 @@ static void uvc_stream_source_process(void *d,
 {
 	struct uvc_stream *stream = d;
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
+	
+	printf("uvc_stream_source_process\n");
 
 	v4l2_queue_buffer(sink, buffer);
 }
@@ -53,6 +55,8 @@ static void uvc_stream_uvc_process(void *d)
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
 	struct video_buffer buf;
 	int ret;
+	
+	printf("uvc_stream_uvc_process\n");
 
 	ret = v4l2_dequeue_buffer(sink, &buf);
 	if (ret < 0)
@@ -67,6 +71,8 @@ static void uvc_stream_uvc_process_no_buf(void *d)
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
 	struct video_buffer buf;
 	int ret;
+	
+	printf("uvc_stream_uvc_process_no_buf\n");
 
 	ret = v4l2_dequeue_buffer(sink, &buf);
 	if (ret < 0)
@@ -83,6 +89,8 @@ static int uvc_stream_start_alloc(struct uvc_stream *stream)
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
 	struct video_buffer_set *buffers = NULL;
 	int ret;
+	
+	printf("uvc_stream_start_alloc\n");
 
 	/* Allocate and export the buffers on the source. */
 	ret = video_source_alloc_buffers(stream->src, 4);
@@ -137,6 +145,8 @@ static int uvc_stream_start_no_alloc(struct uvc_stream *stream)
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
 	int ret;
 	unsigned int i;
+	
+	printf("uvc_stream_start_no_alloc\n");
 
 	/* Allocate buffers on the sink. */
 	ret = v4l2_alloc_buffers(sink, V4L2_MEMORY_MMAP, 4);
@@ -184,6 +194,8 @@ static int uvc_stream_start_encoded(struct uvc_stream *stream)
 {
 	struct v4l2_device *sink = uvc_v4l2_device(stream->uvc);
 	int ret;
+	
+	printf("uvc_stream_start_encoded\n");
 
 	/* Allocate the buffers on the source. */
 	ret = video_source_alloc_buffers(stream->src, 4);
@@ -238,20 +250,25 @@ static int uvc_stream_start(struct uvc_stream *stream)
 {
 	printf("Starting video stream.\n");
 
-	switch (stream->src->type) {
-	case VIDEO_SOURCE_DMABUF:
-		video_source_set_buffer_handler(stream->src, uvc_stream_source_process,
-						stream);
-		return uvc_stream_start_alloc(stream);
-	case VIDEO_SOURCE_STATIC:
-		return uvc_stream_start_no_alloc(stream);
-	case VIDEO_SOURCE_ENCODED:
-		video_source_set_buffer_handler(stream->src, uvc_stream_source_process,
-						stream);
-		return uvc_stream_start_encoded(stream);
-	default:
-		fprintf(stderr, "invalid video source type\n");
-		break;
+	switch (stream->src->type)
+	{
+		case VIDEO_SOURCE_DMABUF:
+			printf("uvc_stream_start: VIDEO_SOURCE_DMABUF\n");
+			video_source_set_buffer_handler(stream->src, uvc_stream_source_process, stream);
+			return uvc_stream_start_alloc(stream);
+			
+		case VIDEO_SOURCE_STATIC:
+			printf("uvc_stream_start: VIDEO_SOURCE_STATIC\n");
+			return uvc_stream_start_no_alloc(stream);
+			
+		case VIDEO_SOURCE_ENCODED:
+			printf("uvc_stream_start: VIDEO_SOURCE_ENCODED\n");
+			video_source_set_buffer_handler(stream->src, uvc_stream_source_process, stream);
+			return uvc_stream_start_encoded(stream);
+			
+		default:
+			fprintf(stderr, "invalid video source type\n");
+			break;
 	}
 
 	return -EINVAL;
@@ -276,6 +293,8 @@ static int uvc_stream_stop(struct uvc_stream *stream)
 
 void uvc_stream_enable(struct uvc_stream *stream, int enable)
 {
+	printf("uvc_stream_enable\n");
+	
 	if (enable)
 		uvc_stream_start(stream);
 	else
@@ -292,6 +311,7 @@ int uvc_stream_set_format(struct uvc_stream *stream,
 		format->pixelformat, format->width, format->height);
 
 	ret = uvc_set_format(stream->uvc, &fmt);
+	
 	if (ret < 0)
 		return ret;
 
@@ -311,6 +331,8 @@ int uvc_stream_set_frame_rate(struct uvc_stream *stream, unsigned int fps)
 struct uvc_stream *uvc_stream_new(const char *uvc_device)
 {
 	struct uvc_stream *stream;
+	
+	printf("uvc_stream_new\n");
 
 	stream = malloc(sizeof(*stream));
 	if (stream == NULL)
@@ -331,6 +353,8 @@ error:
 
 void uvc_stream_delete(struct uvc_stream *stream)
 {
+	printf("uvc_stream_delete\n");
+	
 	if (stream == NULL)
 		return;
 

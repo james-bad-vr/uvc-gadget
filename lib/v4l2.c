@@ -75,7 +75,8 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 	unsigned int i;
 	int ret;
 
-	for (i = 0; ; ++i) {
+	for (i = 0; ; ++i)
+	{
 		struct v4l2_frmivalenum ivalenum;
 
 		memset(&ivalenum, 0, sizeof ivalenum);
@@ -88,17 +89,13 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 			break;
 
 		if (i != ivalenum.index)
-			printf("Warning: driver returned wrong ival index "
-				"%u.\n", ivalenum.index);
+			printf("Warning: driver returned wrong ival index %u.\n", ivalenum.index);
 		if (format->pixelformat != ivalenum.pixel_format)
-			printf("Warning: driver returned wrong ival pixel "
-				"format %08x.\n", ivalenum.pixel_format);
+			printf("Warning: driver returned wrong ival pixel format %08x.\n", ivalenum.pixel_format);
 		if (frame->min_width != ivalenum.width)
-			printf("Warning: driver returned wrong ival width "
-				"%u.\n", ivalenum.width);
+			printf("Warning: driver returned wrong ival width %u.\n", ivalenum.width);
 		if (frame->min_height != ivalenum.height)
-			printf("Warning: driver returned wrong ival height "
-				"%u.\n", ivalenum.height);
+			printf("Warning: driver returned wrong ival height %u.\n", ivalenum.height);
 
 		ival = malloc(sizeof *ival);
 		if (ival == NULL)
@@ -106,24 +103,25 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 
 		memset(ival, 0, sizeof *ival);
 
-		switch (ivalenum.type) {
-		case V4L2_FRMIVAL_TYPE_DISCRETE:
-			ival->min = ivalenum.discrete;
-			ival->max = ivalenum.discrete;
-			ival->step.numerator = 1;
-			ival->step.denominator = 1;
-			break;
+		switch (ivalenum.type)
+		{
+			case V4L2_FRMIVAL_TYPE_DISCRETE:
+				ival->min = ivalenum.discrete;
+				ival->max = ivalenum.discrete;
+				ival->step.numerator = 1;
+				ival->step.denominator = 1;
+				break;
 
-		case V4L2_FRMIVAL_TYPE_STEPWISE:
-			ival->min = ivalenum.stepwise.min;
-			ival->max = ivalenum.stepwise.max;
-			ival->step = ivalenum.stepwise.step;
-			break;
+			case V4L2_FRMIVAL_TYPE_STEPWISE:
+				ival->min = ivalenum.stepwise.min;
+				ival->max = ivalenum.stepwise.max;
+				ival->step = ivalenum.stepwise.step;
+				break;
 
-		default:
-			printf("Error: driver returned invalid frame ival "
-				"type %u\n", ivalenum.type);
-			return -EINVAL;
+			default:
+				printf("Error: driver returned invalid frame ival "
+					"type %u\n", ivalenum.type);
+				return -EINVAL;
 		}
 
 		list_append(&ival->list, &frame->ivals);
@@ -132,14 +130,14 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 	return 0;
 }
 
-static int
-v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_desc *format)
+static int v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_desc *format)
 {
 	struct v4l2_frame_desc *frame;
 	unsigned int i;
 	int ret;
 
-	for (i = 0; ; ++i) {
+	for (i = 0; ; ++i)
+	{
 		struct v4l2_frmsizeenum frmenum;
 
 		memset(&frmenum, 0, sizeof frmenum);
@@ -147,15 +145,14 @@ v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_desc *format)
 		frmenum.pixel_format = format->pixelformat;
 
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FRAMESIZES, &frmenum);
+		
 		if (ret < 0)
 			break;
 
 		if (i != frmenum.index)
-			printf("Warning: driver returned wrong frame index "
-				"%u.\n", frmenum.index);
+			printf("Warning: driver returned wrong frame index %u.\n", frmenum.index);
 		if (format->pixelformat != frmenum.pixel_format)
-			printf("Warning: driver returned wrong frame pixel "
-				"format %08x.\n", frmenum.pixel_format);
+			printf("Warning: driver returned wrong frame pixel format %08x.\n", frmenum.pixel_format);
 
 		frame = malloc(sizeof *frame);
 		if (frame == NULL)
@@ -167,29 +164,29 @@ v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_desc *format)
 		frame->step_width = 1;
 		frame->step_height = 1;
 
-		switch (frmenum.type) {
-		case V4L2_FRMSIZE_TYPE_DISCRETE:
-			frame->min_width = frmenum.discrete.width;
-			frame->min_height = frmenum.discrete.height;
-			frame->max_width = frmenum.discrete.width;
-			frame->max_height = frmenum.discrete.height;
-			break;
+		switch (frmenum.type)
+		{
+			case V4L2_FRMSIZE_TYPE_DISCRETE:
+				frame->min_width = frmenum.discrete.width;
+				frame->min_height = frmenum.discrete.height;
+				frame->max_width = frmenum.discrete.width;
+				frame->max_height = frmenum.discrete.height;
+				break;
 
-		case V4L2_FRMSIZE_TYPE_STEPWISE:
-			frame->step_width = frmenum.stepwise.step_width;
-			frame->step_height = frmenum.stepwise.step_height;
-			/* fallthrough */
-		case V4L2_FRMSIZE_TYPE_CONTINUOUS:
-			frame->min_width = frmenum.stepwise.min_width;
-			frame->min_height = frmenum.stepwise.min_height;
-			frame->max_width = frmenum.stepwise.max_width;
-			frame->max_height = frmenum.stepwise.max_height;
-			break;
+			case V4L2_FRMSIZE_TYPE_STEPWISE:
+				frame->step_width = frmenum.stepwise.step_width;
+				frame->step_height = frmenum.stepwise.step_height;
+				/* fallthrough */
+			case V4L2_FRMSIZE_TYPE_CONTINUOUS:
+				frame->min_width = frmenum.stepwise.min_width;
+				frame->min_height = frmenum.stepwise.min_height;
+				frame->max_width = frmenum.stepwise.max_width;
+				frame->max_height = frmenum.stepwise.max_height;
+				break;
 
-		default:
-			printf("Error: driver returned invalid frame size "
-				"type %u\n", frmenum.type);
-			return -EINVAL;
+			default:
+				printf("Error: driver returned invalid frame size type %u\n", frmenum.type);
+				return -EINVAL;
 		}
 
 		list_append(&frame->list, &format->frames);
@@ -201,13 +198,15 @@ v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_desc *format)
 
 	return 0;
 }
+
 static int v4l2_enum_formats(struct v4l2_device *dev)
 {
 	struct v4l2_format_desc *format;
 	unsigned int i;
 	int ret;
 
-	for (i = 0; ; ++i) {
+	for (i = 0; ; ++i)
+	{
 		struct v4l2_fmtdesc fmtenum;
 
 		memset(&fmtenum, 0, sizeof fmtenum);
@@ -215,17 +214,17 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 		fmtenum.type = dev->type;
 
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FMT, &fmtenum);
+		
 		if (ret < 0)
 			break;
 
 		if (i != fmtenum.index)
-			printf("Warning: driver returned wrong format index "
-				"%u.\n", fmtenum.index);
+			printf("Warning: driver returned wrong format index %u.\n", fmtenum.index);
 		if (dev->type != fmtenum.type)
-			printf("Warning: driver returned wrong format type "
-				"%u.\n", fmtenum.type);
+			printf("Warning: driver returned wrong format type %u.\n", fmtenum.type);
 
 		format = malloc(sizeof *format);
+		
 		if (format == NULL)
 			return -ENOMEM;
 
@@ -237,6 +236,7 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 		list_append(&format->list, &dev->formats);
 
 		ret = v4l2_enum_frame_sizes(dev, format);
+		
 		if (ret < 0)
 			return ret;
 	}
@@ -254,8 +254,11 @@ struct v4l2_device *v4l2_open(const char *devname)
 	struct v4l2_capability cap;
 	__u32 capabilities;
 	int ret;
+	
+	printf("v4l2_open: %s\n", devname);
 
 	dev = malloc(sizeof *dev);
+	
 	if (dev == NULL)
 		return NULL;
 
@@ -265,7 +268,9 @@ struct v4l2_device *v4l2_open(const char *devname)
 	list_init(&dev->formats);
 
 	dev->fd = open(devname, O_RDWR | O_NONBLOCK);
-	if (dev->fd < 0) {
+	
+	if (dev->fd < 0)
+	{
 		printf("Error opening device %s: %d.\n", devname, errno);
 		v4l2_close(dev);
 		return NULL;
@@ -273,9 +278,10 @@ struct v4l2_device *v4l2_open(const char *devname)
 
 	memset(&cap, 0, sizeof cap);
 	ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap);
-	if (ret < 0) {
-		printf("Error opening device %s: unable to query "
-			"device.\n", devname);
+	
+	if (ret < 0)
+	{
+		printf("Error opening device %s: unable to query device.\n", devname);
 		v4l2_close(dev);
 		return NULL;
 	}
@@ -287,20 +293,25 @@ struct v4l2_device *v4l2_open(const char *devname)
 	capabilities = cap.device_caps ? : cap.capabilities;
 
 	if (capabilities & V4L2_CAP_VIDEO_CAPTURE)
+	{
 		dev->type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+	}
 	else if (capabilities & V4L2_CAP_VIDEO_OUTPUT)
+	{
 		dev->type = V4L2_BUF_TYPE_VIDEO_OUTPUT;
-	else {
-		printf("Error opening device %s: neither video capture "
-			"nor video output supported.\n", devname);
+	}
+	else
+	{
+		printf("Error opening device %s: neither video capture nor video output supported.\n", devname);
 		v4l2_close(dev);
 		return NULL;
 	}
 
 	ret = v4l2_enum_formats(dev);
-	if (ret < 0) {
-		printf("Error opening device %s: unable to enumerate "
-			"formats.\n", devname);
+	
+	if (ret < 0)
+	{
+		printf("Error opening device %s: unable to enumerate formats.\n", devname);
 		v4l2_close(dev);
 		return NULL;
 	}
@@ -312,27 +323,58 @@ struct v4l2_device *v4l2_open(const char *devname)
 
 void v4l2_close(struct v4l2_device *dev)
 {
-	struct v4l2_format_desc *format, *next_fmt;
-	struct v4l2_frame_desc *frame, *next_frm;
-	struct v4l2_ival_desc *ival, *next_ival;
+    struct v4l2_format_desc *format, *next_fmt;
+    struct v4l2_frame_desc *frame, *next_frm;
+    struct v4l2_ival_desc *ival, *next_ival;
 
-	if (dev == NULL)
-		return;
+    // Check if the device structure is valid
+    if (dev == NULL)
+        return;
 
-	list_for_each_entry_safe(format, next_fmt, &dev->formats, list) {
-		list_for_each_entry_safe(frame, next_frm, &format->frames, list) {
-			list_for_each_entry_safe(ival, next_ival, &frame->ivals, list) {
-				free(ival);
-			}
-			free(frame);
-		}
-		free(format);
-	}
+    printf("Closing V4L2 device: %s\n", dev->name);
 
-	free(dev->name);
-	close(dev->fd);
-	free(dev);
+    // Free all formats and their associated frames and intervals
+    list_for_each_entry_safe(format, next_fmt, &dev->formats, list)
+    {
+        printf("Freeing format: 0x%x\n", format->pixelformat);
+
+        list_for_each_entry_safe(frame, next_frm, &format->frames, list)
+        {
+            printf("Freeing frame: %ux%u to %ux%u\n",
+                   frame->min_width, frame->min_height,
+                   frame->max_width, frame->max_height);
+
+            list_for_each_entry_safe(ival, next_ival, &frame->ivals, list)
+            {
+                printf("Freeing frame interval: min %u/%u, max %u/%u\n",
+                       ival->min.numerator, ival->min.denominator,
+                       ival->max.numerator, ival->max.denominator);
+                free(ival);
+            }
+            free(frame);
+        }
+        free(format);
+    }
+
+    // Free the device name string
+    if (dev->name)
+    {
+        printf("Freeing device name: %s\n", dev->name);
+        free(dev->name);
+    }
+
+    // Close the device file descriptor
+    if (dev->fd >= 0)
+    {
+        printf("Closing file descriptor: %d\n", dev->fd);
+        close(dev->fd);
+    }
+
+    // Free the device structure itself
+    printf("Freeing V4L2 device structure.\n");
+    free(dev);
 }
+
 
 /* -----------------------------------------------------------------------------
  * Controls
