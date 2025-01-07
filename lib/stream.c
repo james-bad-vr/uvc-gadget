@@ -342,7 +342,10 @@ void uvc_stream_delete(struct uvc_stream *stream)
 void uvc_stream_init_uvc(struct uvc_stream *stream,
 			 struct uvc_function_config *fc)
 {
+	printf("uvc_set_config(stream->uvc, fc);\n");
 	uvc_set_config(stream->uvc, fc);
+	
+	printf("uvc_events_init(stream->uvc, stream->events);\n");
 	uvc_events_init(stream->uvc, stream->events);
 }
 

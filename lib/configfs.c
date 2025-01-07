@@ -134,6 +134,8 @@ static int attribute_read_uint(const char *path, const char *file,
 	char buf[11];
 	char *endptr;
 	int ret;
+	
+	printf("attribute_read_uint\n");
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
@@ -159,6 +161,8 @@ static char *attribute_read_str(const char *path, const char *file)
 	char buf[1024];
 	char *p;
 	int ret;
+	
+	printf("attribute_read_str\n");
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
@@ -365,6 +369,7 @@ static int parse_legacy_g_webcam(const char *udc,
 
 	*fc = g_webcam_config;
 
+	printf("parse_legacy_g_webcam\n");
 	/*
 	 * We need to duplicate all sub-structures as the
 	 * configfs_free_uvc_function() function expects them to be dynamically
@@ -454,6 +459,8 @@ static char *configfs_find_uvc_function(const char *function)
 	char *func_path;
 	char *path;
 	int ret;
+	
+	printf("configfs_find_uvc_function\n");
 
 	configfs = configfs_mount_point();
 	if (!configfs)
@@ -491,6 +498,8 @@ static char *configfs_find_uvc_function(const char *function)
 void configfs_free_uvc_function(struct uvc_function_config *fc)
 {
 	unsigned int i, j;
+	
+	printf("configfs_free_uvc_function\n");
 
 	free(fc->udc);
 	free(fc->video);
@@ -534,6 +543,8 @@ static int configfs_parse_interface(const char *path,
 {
 	int ret;
 
+	printf("configfs_parse_interface\n");
+	
 	ret = attribute_read_uint(path, "bInterfaceNumber",
 				  &cfg->bInterfaceNumber);
 
@@ -544,6 +555,8 @@ static int configfs_parse_control(const char *path,
 				  struct uvc_function_config_control *cfg)
 {
 	int ret;
+	
+	printf("configfs_parse_control\n");
 
 	ret = configfs_parse_interface(path, &cfg->intf);
 
@@ -556,6 +569,8 @@ static int configfs_parse_streaming_frame(const char *path,
 	char *intervals;
 	char *p;
 	int ret = 0;
+	
+	printf("configfs_parse_streaming_frame\n");
 
 	ret = ret ? : attribute_read_uint(path, "bFrameIndex", &frame->index);
 	ret = ret ? : attribute_read_uint(path, "wWidth", &frame->width);
@@ -631,6 +646,8 @@ static int configfs_parse_streaming_format(const char *path,
 	unsigned int i;
 	int n_entries;
 	int ret;
+	
+	printf("configfs_parse_streaming_format\n");
 
 	ret = attribute_read_uint(path, "bFormatIndex", &format->index);
 	if (ret < 0)
@@ -758,6 +775,8 @@ static int configfs_parse_streaming_header(const char *path,
 	unsigned int i;
 	int n_entries;
 	int ret;
+	
+	printf("configfs_parse_streaming_header\n");
 
 	/* Find all entries corresponding to a format and parse them. */
 	n_entries = scandir(path, &entries, format_filter, alphasort);
@@ -813,6 +832,8 @@ static int configfs_parse_streaming(const char *path,
 	char *header;
 	char *class;
 	int ret;
+	
+	printf("configfs_parse_streaming\n");
 
 	ret = configfs_parse_interface(path, &cfg->intf);
 	if (ret < 0)
@@ -840,6 +861,8 @@ static int configfs_parse_uvc(const char *fpath,
 			      struct uvc_function_config *fc)
 {
 	int ret = 0;
+	
+	printf("configfs_parse_uvc\n");
 
 	ret = ret ? : configfs_parse_child(fpath, "control", &fc->control,
 					   configfs_parse_control);
@@ -882,6 +905,8 @@ struct uvc_function_config *configfs_parse_uvc_function(const char *function)
 	struct uvc_function_config *fc;
 	char *fpath;
 	int ret = 0;
+	
+	printf("configfs_parse_uvc_function\n");
 
 	fc = malloc(sizeof *fc);
 	if (fc == NULL)
