@@ -50,16 +50,21 @@ static void jpg_source_destroy(struct video_source *s)
 	free(src);
 }
 
-static int jpg_source_set_format(struct video_source *s __attribute__((unused)),
-				  struct v4l2_pix_format *fmt)
+static int jpg_source_set_format(struct video_source *s __attribute__((unused)), struct v4l2_pix_format *fmt)
 {
-	if (fmt->pixelformat != v4l2_fourcc('M', 'J', 'P', 'G')) {
-		printf("jpg-source: unsupported fourcc\n");
+	char fourcc_str[5] = {0}; // FourCC is 4 characters, plus null terminator
+	memcpy(fourcc_str, &fmt->pixelformat, 4); // Copy FourCC to a string
+
+	if (fmt->pixelformat != v4l2_fourcc('M', 'J', 'P', 'G'))
+	{
+		printf("jpg-source: Unsupported FourCC: %s (0x%08X)\n", fourcc_str, fmt->pixelformat);
 		return -EINVAL;
 	}
 
+	printf("jpg-source: Supported format detected: %s (0x%08X)\n", fourcc_str, fmt->pixelformat);
 	return 0;
 }
+
 
 static int jpg_source_set_frame_rate(struct video_source *s, unsigned int fps)
 {
@@ -103,10 +108,11 @@ static int jpg_source_stream_off(struct video_source *s)
 	return ret;
 }
 
-static void jpg_source_fill_buffer(struct video_source *s,
-				   struct video_buffer *buf)
+static void jpg_source_fill_buffer(struct video_source *s, struct video_buffer *buf)
 {
 	struct jpg_source *src = to_jpg_source(s);
+	
+	printf("jpg_source_fill_buffer");
 
 	memcpy(buf->mem, src->imgdata, src->imgsize);
 	buf->bytesused = src->imgsize;

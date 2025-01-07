@@ -150,12 +150,19 @@ int main(int argc, char *argv[])
 	}
 #endif
 	else if (img_path)
+	{
 		src = jpg_video_source_create(img_path);
+	}
 	else if (slideshow_dir)
+	{
 		src = slideshow_video_source_create(slideshow_dir);
+	}
 	else
+	{
 		src = test_video_source_create();
-	if (src == NULL) {
+	}
+	if (src == NULL)
+	{
 		ret = 1;
 		goto done;
 	}

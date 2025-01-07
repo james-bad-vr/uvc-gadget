@@ -8,6 +8,7 @@
  */
 
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/videodev2.h>
@@ -44,8 +45,7 @@ static void test_source_destroy(struct video_source *s)
 	free(src);
 }
 
-static int test_source_set_format(struct video_source *s,
-				  struct v4l2_pix_format *fmt)
+static int test_source_set_format(struct video_source *s, struct v4l2_pix_format *fmt)
 {
 	struct test_source *src = to_test_source(s);
 
@@ -59,8 +59,7 @@ static int test_source_set_format(struct video_source *s,
 	return 0;
 }
 
-static int test_source_set_frame_rate(struct video_source *s __attribute__((unused)),
-				      unsigned int fps __attribute__((unused)))
+static int test_source_set_frame_rate(struct video_source *s __attribute__((unused)), unsigned int fps __attribute__((unused)))
 {
 	return 0;
 }
@@ -80,38 +79,61 @@ static int test_source_stream_off(struct video_source *s __attribute__((unused))
 	return 0;
 }
 
-static void test_source_fill_buffer(struct video_source *s,
-				    struct video_buffer *buf)
+static void test_source_fill_buffer(struct video_source *s, struct video_buffer *buf)
 {
 	struct test_source *src = to_test_source(s);
 	unsigned int bpl;
 	unsigned int i, j;
 	void *mem = buf->mem;
 
+	printf("test_source_fill_buffer: width='%i', height='%i'\n", src->width, src->height);
+
 	bpl = src->width * 2;
-	for (i = 0; i < src->height; ++i) {
-		for (j = 0; j < bpl; j += 4) {
-			if (j < bpl * 1 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = WHITE;
-			else if (j < bpl * 2 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = YELLOW;
-			else if (j < bpl * 3 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = CYAN;
-			else if (j < bpl * 4 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = GREEN;
-			else if (j < bpl * 5 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = MAGENTA;
-			else if (j < bpl * 6 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = RED;
-			else if (j < bpl * 7 / 8)
-				*(unsigned int *)(mem + i*bpl + j) = BLUE;
+
+	for (i = 0; i < src->height; ++i)
+	{
+		for (j = 0; j < bpl; j += 4)
+		{
+			unsigned int x = j / 2; // Pixel index (j increments by 4, so divide by 2 to get the pixel index)
+
+			if (x < src->width * 1 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = BLACK;
+			else if (x < src->width * 2 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = RED;
+			else if (x < src->width * 3 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = WHITE;
+			else if (x < src->width * 4 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = BLACK;
+			else if (x < src->width * 5 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = RED;
+			else if (x < src->width * 6 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = WHITE;
+			else if (x < src->width * 7 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = BLACK;
+			else if (x < src->width * 8 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = RED;
+			else if (x < src->width * 9 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = WHITE;
+			else if (x < src->width * 10 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = MAGENTA;
+			else if (x < src->width * 11 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = YELLOW;
+			else if (x < src->width * 12 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = BLUE;
+			else if (x < src->width * 13 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = CYAN;
+			else if (x < src->width * 14 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = GREEN;
+			else if (x < src->width * 15 / 16)
+				*(unsigned int *)(mem + i * bpl + j) = MAGENTA;
 			else
-				*(unsigned int *)(mem + i*bpl + j) = BLACK;
+				*(unsigned int *)(mem + i * bpl + j) = YELLOW;
 		}
 	}
 
 	buf->bytesused = bpl * src->height;
 }
+
 
 static const struct video_source_ops test_source_ops = {
 	.destroy = test_source_destroy,

@@ -298,7 +298,7 @@ static int uvc_stream_stop(struct uvc_stream *stream)
 
 void uvc_stream_enable(struct uvc_stream *stream, int enable)
 {
-	printf("uvc_stream_enable\n");
+	printf("uvc_stream_enable: %d\n", enable);
 	
 	if (enable)
 		uvc_stream_start(stream);
