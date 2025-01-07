@@ -72,8 +72,6 @@ static void uvc_stream_uvc_process_no_buf(void *d)
 	struct video_buffer buf;
 	int ret;
 	
-	printf("uvc_stream_uvc_process_no_buf\n");
-
 	ret = v4l2_dequeue_buffer(sink, &buf);
 	if (ret < 0)
 		return;

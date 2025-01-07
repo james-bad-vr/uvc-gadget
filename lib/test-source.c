@@ -9,6 +9,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 #include <linux/videodev2.h>
@@ -26,6 +27,7 @@
 #define MAGENTA 0xe64ed64e
 #define RED     0xf03f663f
 #define WHITE   0x80eb80eb
+#define GRAY    0x807F7F7F
 #define YELLOW  0x8adb10db
 
 struct test_source {
@@ -79,61 +81,46 @@ static int test_source_stream_off(struct video_source *s __attribute__((unused))
 	return 0;
 }
 
+static unsigned int frame_count = 0; // Global frame counter
+
 static void test_source_fill_buffer(struct video_source *s, struct video_buffer *buf)
 {
-	struct test_source *src = to_test_source(s);
-	unsigned int bpl;
-	unsigned int i, j;
-	void *mem = buf->mem;
+    struct test_source *src = to_test_source(s);
+    unsigned int bpl;
+    unsigned int i, j;
+    void *mem = buf->mem;
 
-	printf("test_source_fill_buffer: width='%i', height='%i'\n", src->width, src->height);
+    bpl = src->width * 2; // Bytes per line (2 bytes per pixel)
 
-	bpl = src->width * 2;
+    // Define square size for the checkerboard
+    unsigned int square_size = 32; // Size of each square in pixels
+    unsigned int horizontal_offset = frame_count % (square_size * 2); // Offset cycles within two square widths
 
-	for (i = 0; i < src->height; ++i)
-	{
-		for (j = 0; j < bpl; j += 4)
-		{
-			unsigned int x = j / 2; // Pixel index (j increments by 4, so divide by 2 to get the pixel index)
+    for (i = 0; i < src->height; ++i)
+    {
+        for (j = 0; j < bpl; j += 4)
+        {
+            unsigned int x = j / 2; // Pixel index in the row (2 bytes per pixel)
 
-			if (x < src->width * 1 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = BLACK;
-			else if (x < src->width * 2 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = RED;
-			else if (x < src->width * 3 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = WHITE;
-			else if (x < src->width * 4 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = BLACK;
-			else if (x < src->width * 5 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = RED;
-			else if (x < src->width * 6 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = WHITE;
-			else if (x < src->width * 7 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = BLACK;
-			else if (x < src->width * 8 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = RED;
-			else if (x < src->width * 9 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = WHITE;
-			else if (x < src->width * 10 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = MAGENTA;
-			else if (x < src->width * 11 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = YELLOW;
-			else if (x < src->width * 12 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = BLUE;
-			else if (x < src->width * 13 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = CYAN;
-			else if (x < src->width * 14 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = GREEN;
-			else if (x < src->width * 15 / 16)
-				*(unsigned int *)(mem + i * bpl + j) = MAGENTA;
-			else
-				*(unsigned int *)(mem + i * bpl + j) = YELLOW;
-		}
-	}
+            // Apply horizontal offset to the x coordinate
+            unsigned int shifted_x = (x + horizontal_offset) % src->width;
 
-	buf->bytesused = bpl * src->height;
+            // Checkerboard pattern with horizontal offset
+            unsigned int color = (((i / square_size) + (shifted_x / square_size)) % 2 == 0) ? WHITE : GRAY;
+
+            // Write the color to two consecutive pixels
+            *(unsigned int *)(mem + i * bpl + j) = color;
+        }
+    }
+
+    buf->bytesused = bpl * src->height;
+
+    printf("test_source_fill_buffer: width=%i, height=%i, frame_count=%u, bytesused=%d, horizontal_offset=%u\n",
+           src->width, src->height, frame_count, buf->bytesused, horizontal_offset);
+
+    // Increment the frame count for the next call
+    frame_count++;
 }
-
 
 static const struct video_source_ops test_source_ops = {
 	.destroy = test_source_destroy,
