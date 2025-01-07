@@ -102,7 +102,10 @@ void libcamera_source::outputReady(void *mem, size_t bytesused, int64_t timestam
 	buffer.index = cookie;
 	buffer.mem = mem;
 	buffer.bytesused = bytesused;
-	buffer.timestamp = { timestamp / 1000000, timestamp % 1000000 };
+
+	// Fix: Explicit casting to prevent narrowing conversion
+	buffer.timestamp = { static_cast<__time_t>(timestamp / 1000000),
+						 static_cast<__suseconds_t>(timestamp % 1000000) };
 
 	src.handler(src.handler_data, &src, &buffer);
 }
