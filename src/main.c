@@ -111,7 +111,8 @@ int main(int argc, char *argv[])
 
 	if (argv[optind] != NULL)
 		function = argv[optind];
-
+	
+	printf("configfs_parse_uvc_function\n");
 	fc = configfs_parse_uvc_function(function);
 	if (!fc) {
 		printf("Failed to identify function configuration\n");
@@ -129,6 +130,7 @@ int main(int argc, char *argv[])
 	 * received when the user presses CTRL-C. This will allow the main loop
 	 * to be interrupted, and resources to be freed cleanly.
 	 */
+	printf("events_init\n");
 	events_init(&events);
 
 	sigint_events = &events;
@@ -136,10 +138,16 @@ int main(int argc, char *argv[])
 
 	/* Create and initialize a video source. */
 	if (cap_device)
+	{
+		printf("v4l2_video_source_create\n");
 		src = v4l2_video_source_create(cap_device);
+	}
 #ifdef HAVE_LIBCAMERA
 	else if (camera)
+	{
+		printf("libcamera_source_create\n");
 		src = libcamera_source_create(camera);
+	}
 #endif
 	else if (img_path)
 		src = jpg_video_source_create(img_path);
@@ -157,18 +165,27 @@ int main(int argc, char *argv[])
 
 #ifdef HAVE_LIBCAMERA
 	if (camera)
+	{
+		printf("libcamera_source_init\n");
 		libcamera_source_init(src, &events);
+	}
 #endif
 
 	/* Create and initialise the stream. */
+	printf("uvc_stream_new\n");
 	stream = uvc_stream_new(fc->video);
 	if (stream == NULL) {
 		ret = 1;
 		goto done;
 	}
 
+	printf("uvc_stream_set_event_handler\n");
 	uvc_stream_set_event_handler(stream, &events);
+	
+	printf("uvc_stream_set_video_source\n");
 	uvc_stream_set_video_source(stream, src);
+	
+	printf("uvc_stream_init_uvc\n");
 	uvc_stream_init_uvc(stream, fc);
 
 	/* Main capture loop */
@@ -176,9 +193,16 @@ int main(int argc, char *argv[])
 
 done:
 	/* Cleanup */
+	printf("uvc_stream_delete\n");
 	uvc_stream_delete(stream);
+	
+	printf("video_source_destroy\n");
 	video_source_destroy(src);
+	
+	printf("events_cleanup\n");
 	events_cleanup(&events);
+	
+	printf("configfs_free_uvc_function\n");
 	configfs_free_uvc_function(fc);
 
 	return ret;
