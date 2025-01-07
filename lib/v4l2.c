@@ -36,7 +36,8 @@
 #define V4L2_BUF_FLAG_ERROR	0x0040
 #endif
 
-struct v4l2_ival_desc {
+struct v4l2_ival_desc
+{
 	struct v4l2_fract min;
 	struct v4l2_fract max;
 	struct v4l2_fract step;
@@ -44,7 +45,8 @@ struct v4l2_ival_desc {
 	struct list_entry list;
 };
 
-struct v4l2_frame_desc {
+struct v4l2_frame_desc
+{
 	unsigned int min_width;
 	unsigned int min_height;
 	unsigned int max_width;
@@ -56,7 +58,8 @@ struct v4l2_frame_desc {
 	struct list_entry ivals;
 };
 
-struct v4l2_format_desc {
+struct v4l2_format_desc
+{
 	unsigned int pixelformat;
 
 	struct list_entry list;
@@ -85,6 +88,7 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 		ivalenum.width = frame->min_width;
 		ivalenum.height = frame->min_height;
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FRAMEINTERVALS, &ivalenum);
+		
 		if (ret < 0)
 			break;
 
@@ -220,6 +224,7 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 
 		if (i != fmtenum.index)
 			printf("Warning: driver returned wrong format index %u.\n", fmtenum.index);
+		
 		if (dev->type != fmtenum.type)
 			printf("Warning: driver returned wrong format type %u.\n", fmtenum.type);
 
@@ -349,6 +354,7 @@ void v4l2_close(struct v4l2_device *dev)
                 printf("Freeing frame interval: min %u/%u, max %u/%u\n",
                        ival->min.numerator, ival->min.denominator,
                        ival->max.numerator, ival->max.denominator);
+					   
                 free(ival);
             }
             free(frame);
@@ -388,7 +394,9 @@ int v4l2_get_control(struct v4l2_device *dev, unsigned int id, int32_t *value)
 	ctrl.id = id;
 
 	ret = ioctl(dev->fd, VIDIOC_G_CTRL, &ctrl);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to get control (%d).\n", dev->name, errno);
 		return -errno;
 	}
@@ -406,7 +414,9 @@ int v4l2_set_control(struct v4l2_device *dev, unsigned int id, int32_t *value)
 	ctrl.value = *value;
 
 	ret = ioctl(dev->fd, VIDIOC_S_CTRL, &ctrl);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to set control (%d).\n", dev->name, errno);
 		return -errno;
 	}
@@ -426,9 +436,9 @@ int v4l2_get_controls(struct v4l2_device *dev, unsigned int count,
 	controls.controls = ctrls;
 
 	ret = ioctl(dev->fd, VIDIOC_G_EXT_CTRLS, &controls);
+	
 	if (ret < 0)
-		printf("%s: unable to get multiple controls (%d).\n", dev->name,
-		       errno);
+		printf("%s: unable to get multiple controls (%d).\n", dev->name, errno);
 
 	return ret;
 }
@@ -444,9 +454,9 @@ int v4l2_set_controls(struct v4l2_device *dev, unsigned int count,
 	controls.controls = ctrls;
 
 	ret = ioctl(dev->fd, VIDIOC_S_EXT_CTRLS, &controls);
+	
 	if (ret < 0)
-		printf("%s: unable to set multiple controls (%d).\n", dev->name,
-		       errno);
+		printf("%s: unable to set multiple controls (%d).\n", dev->name, errno);
 
 	return ret;
 }
@@ -464,9 +474,10 @@ int v4l2_get_crop(struct v4l2_device *dev, struct v4l2_rect *rect)
 	crop.type = dev->type;
 
 	ret = ioctl(dev->fd, VIDIOC_G_CROP, &crop);
-	if (ret < 0) {
-		printf("%s: unable to get crop rectangle (%d).\n", dev->name,
-		       errno);
+	
+	if (ret < 0)
+	{
+		printf("%s: unable to get crop rectangle (%d).\n", dev->name, errno);
 		return -errno;
 	}
 
@@ -486,9 +497,10 @@ int v4l2_set_crop(struct v4l2_device *dev, struct v4l2_rect *rect)
 	crop.c = *rect;
 
 	ret = ioctl(dev->fd, VIDIOC_S_CROP, &crop);
-	if (ret < 0) {
-		printf("%s: unable to set crop rectangle (%d).\n", dev->name,
-		       errno);
+	
+	if (ret < 0)
+	{
+		printf("%s: unable to set crop rectangle (%d).\n", dev->name, errno);
 		return -errno;
 	}
 
@@ -507,7 +519,9 @@ int v4l2_get_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	fmt.type = dev->type;
 
 	ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to get format (%d).\n", dev->name, errno);
 		return -errno;
 	}
@@ -532,7 +546,9 @@ int v4l2_set_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	fmt.fmt.pix.sizeimage = format->sizeimage;
 
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to set format (%d).\n", dev->name, errno);
 		return -errno;
 	}
@@ -554,7 +570,9 @@ int v4l2_set_frame_rate(struct v4l2_device *dev, unsigned int fps)
 	parm.parm.capture.timeperframe.denominator = fps;
 
 	ret = ioctl(dev->fd, VIDIOC_S_PARM, &parm);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to set frame rate (%d).\n", dev->name, errno);
 		return -errno;
 	}
@@ -587,16 +605,17 @@ int v4l2_alloc_buffers(struct v4l2_device *dev, enum v4l2_memory memtype,
 	rb.memory = memtype;
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
-	if (ret < 0) {
-		printf("%s: unable to request buffers (%d).\n", dev->name,
-		       errno);
+	
+	if (ret < 0)
+	{
+		printf("%s: unable to request buffers (%d).\n", dev->name, errno);
 		ret = -errno;
 		goto done;
 	}
 
-	if (rb.count > nbufs) {
-		printf("%s: driver needs more buffers (%u) than available (%u).\n",
-		       dev->name, rb.count, nbufs);
+	if (rb.count > nbufs)
+	{
+		printf("%s: driver needs more buffers (%u) than available (%u).\n", dev->name, rb.count, nbufs);
 		ret = -E2BIG;
 		goto done;
 	}
@@ -608,12 +627,15 @@ int v4l2_alloc_buffers(struct v4l2_device *dev, enum v4l2_memory memtype,
 	dev->buffers.nbufs = rb.count;
 
 	dev->buffers.buffers = calloc(nbufs, sizeof *dev->buffers.buffers);
-	if (dev->buffers.buffers == NULL) {
+	
+	if (dev->buffers.buffers == NULL)
+	{
 		ret = -ENOMEM;
 		goto done;
 	}
 
-	for (i = 0; i < dev->buffers.nbufs; ++i) {
+	for (i = 0; i < dev->buffers.nbufs; ++i)
+	{
 		dev->buffers.buffers[i].index = i;
 		dev->buffers.buffers[i].dmabuf = -1;
 	}
@@ -636,21 +658,25 @@ int v4l2_free_buffers(struct v4l2_device *dev)
 	if (dev->buffers.nbufs == 0)
 		return 0;
 
-	for (i = 0; i < dev->buffers.nbufs; ++i) {
+	for (i = 0; i < dev->buffers.nbufs; ++i)
+	{
 		struct video_buffer *buffer = &dev->buffers.buffers[i];
 
-		if (buffer->mem) {
+		if (buffer->mem)
+		{
 			ret = munmap(buffer->mem, buffer->size);
-			if (ret < 0) {
-				printf("%s: unable to unmap buffer %u (%d)\n",
-				       dev->name, i, errno);
+			
+			if (ret < 0)
+			{
+				printf("%s: unable to unmap buffer %u (%d)\n", dev->name, i, errno);
 				return -errno;
 			}
 
 			buffer->mem = NULL;
 		}
 
-		if (buffer->dmabuf != -1) {
+		if (buffer->dmabuf != -1)
+		{
 			close(buffer->dmabuf);
 			buffer->dmabuf = -1;
 		}
@@ -664,7 +690,9 @@ int v4l2_free_buffers(struct v4l2_device *dev)
 	rb.memory = dev->memtype;
 
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("%s: unable to release buffers (%d)\n", dev->name,
 		       errno);
 		return -errno;
@@ -688,7 +716,8 @@ int v4l2_export_buffers(struct v4l2_device *dev)
 	if (dev->memtype != V4L2_MEMORY_MMAP)
 		return -EINVAL;
 
-	for (i = 0; i < dev->buffers.nbufs; ++i) {
+	for (i = 0; i < dev->buffers.nbufs; ++i)
+	{
 		struct v4l2_exportbuffer expbuf = {
 			.type = dev->type,
 			.index = i,
@@ -700,14 +729,17 @@ int v4l2_export_buffers(struct v4l2_device *dev)
 		};
 
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
-		if (ret < 0) {
-			printf("%s: unable to query buffer %u (%d).\n",
-			       dev->name, i, errno);
+		
+		if (ret < 0)
+		{
+			printf("%s: unable to query buffer %u (%d).\n", dev->name, i, errno);
 			return -errno;
 		}
 
 		ret = ioctl(dev->fd, VIDIOC_EXPBUF, &expbuf);
-		if (ret < 0) {
+		
+		if (ret < 0)
+		{
 			printf("Failed to export buffer %u.\n", i);
 			return -errno;
 		}
@@ -734,32 +766,36 @@ int v4l2_import_buffers(struct v4l2_device *dev,
 	if (dev->memtype != V4L2_MEMORY_DMABUF)
 		return -EINVAL;
 
-	for (i = 0; i < dev->buffers.nbufs; ++i) {
+	for (i = 0; i < dev->buffers.nbufs; ++i)
+	{
 		const struct video_buffer *buffer = &buffers->buffers[i];
 		struct v4l2_buffer buf = {
 			.index = i,
 			.type = dev->type,
 			.memory = dev->memtype,
 		};
+		
 		int fd;
 
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
-		if (ret < 0) {
-			printf("%s: unable to query buffer %u (%d).\n",
-			       dev->name, i, errno);
+		
+		if (ret < 0)
+		{
+			printf("%s: unable to query buffer %u (%d).\n", dev->name, i, errno);
 			return -errno;
 		}
 
-		if (buffer->size < buf.length) {
-			printf("%s: buffer %u too small (%u bytes required, %u bytes available).\n",
-			       dev->name, i, buf.length, buffer->size);
+		if (buffer->size < buf.length)
+		{
+			printf("%s: buffer %u too small (%u bytes required, %u bytes available).\n", dev->name, i, buf.length, buffer->size);
 			return -EINVAL;
 		}
 
 		fd = dup(buffer->dmabuf);
-		if (fd < 0) {
-			printf("%s: failed to duplicate dmabuf fd %d.\n",
-			       dev->name, buffer->dmabuf);
+		
+		if (fd < 0)
+		{
+			printf("%s: failed to duplicate dmabuf fd %d.\n", dev->name, buffer->dmabuf);
 			return ret;
 		}
 
@@ -790,25 +826,24 @@ int v4l2_mmap_buffers(struct v4l2_device *dev)
 		void *mem;
 
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
-		if (ret < 0) {
-			printf("%s: unable to query buffer %u (%d).\n",
-			       dev->name, i, errno);
+		if (ret < 0)
+		{
+			printf("%s: unable to query buffer %u (%d).\n", dev->name, i, errno);
 			return -errno;
 		}
 
-		mem = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED,
-			   dev->fd, buf.m.offset);
-		if (mem == MAP_FAILED) {
-			printf("%s: unable to map buffer %u (%d)\n",
-			       dev->name, i, errno);
+		mem = mmap(0, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED, dev->fd, buf.m.offset);
+		
+		if (mem == MAP_FAILED)
+		{
+			printf("%s: unable to map buffer %u (%d)\n", dev->name, i, errno);
 			return -errno;
 		}
 
 		buffer->mem = mem;
 		buffer->size = buf.length;
 
-		printf("%s: buffer %u mapped at address %p.\n", dev->name, i,
-		       mem);
+		printf("%s: buffer %u mapped at address %p.\n", dev->name, i, mem);
 	}
 
 	return 0;
@@ -824,9 +859,10 @@ int v4l2_dequeue_buffer(struct v4l2_device *dev, struct video_buffer *buffer)
 	buf.memory = dev->memtype;
 
 	ret = ioctl(dev->fd, VIDIOC_DQBUF, &buf);
-	if (ret < 0) {
-		printf("%s: unable to dequeue buffer index %u/%u (%d)\n",
-		       dev->name, buf.index, dev->buffers.nbufs, errno);
+	
+	if (ret < 0)
+	{
+		printf("%s: unable to dequeue buffer index %u/%u (%d)\n", dev->name, buf.index, dev->buffers.nbufs, errno);
 		return -errno;
 	}
 
@@ -860,9 +896,10 @@ int v4l2_queue_buffer(struct v4l2_device *dev, struct video_buffer *buffer)
 		buf.bytesused = buffer->bytesused;
 
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
-	if (ret < 0) {
-		printf("%s: unable to queue buffer index %u/%u (%d)\n",
-		       dev->name, buf.index, dev->buffers.nbufs, errno);
+	
+	if (ret < 0)
+	{
+		printf("%s: unable to queue buffer index %u/%u (%d)\n", dev->name, buf.index, dev->buffers.nbufs, errno);
 		return -errno;
 	}
 
@@ -879,6 +916,7 @@ int v4l2_stream_on(struct v4l2_device *dev)
 	int ret;
 
 	ret = ioctl(dev->fd, VIDIOC_STREAMON, &type);
+	
 	if (ret < 0)
 		return -errno;
 
@@ -891,6 +929,7 @@ int v4l2_stream_off(struct v4l2_device *dev)
 	int ret;
 
 	ret = ioctl(dev->fd, VIDIOC_STREAMOFF, &type);
+	
 	if (ret < 0)
 		return -errno;
 

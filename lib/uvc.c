@@ -105,7 +105,9 @@ struct uvc_device *uvc_open(const char *devname, struct uvc_stream *stream)
 	dev->stream = stream;
 
 	dev->vdev = v4l2_open(devname);
-	if (dev->vdev == NULL) {
+	
+	if (dev->vdev == NULL)
+	{
 		free(dev);
 		return NULL;
 	}
@@ -136,22 +138,23 @@ uvc_fill_streaming_control(struct uvc_device *dev,
 	const struct uvc_function_config_frame *frame;
 	unsigned int i;
 	
-	
     printf("uvc_fill_streaming_control\n");
+	
 	/*
 	 * Restrict the iformat, iframe and ival to valid values. Negative
 	 * values for iformat or iframe will result in the maximum valid value
 	 * being selected.
 	 */
-        iformat = clamp((unsigned int)iformat, 1U,
-                        dev->fc->streaming.num_formats);
+    iformat = clamp((unsigned int)iformat, 1U, dev->fc->streaming.num_formats);
 	format = &dev->fc->streaming.formats[iformat-1];
 
 	iframe = clamp((unsigned int)iframe, 1U, format->num_frames);
 	frame = &format->frames[iframe-1];
 
-	for (i = 0; i < frame->num_intervals; ++i) {
-		if (ival <= frame->intervals[i]) {
+	for (i = 0; i < frame->num_intervals; ++i)
+	{
+		if (ival <= frame->intervals[i])
+		{
 			ival = frame->intervals[i];
 			break;
 		}
@@ -172,11 +175,12 @@ uvc_fill_streaming_control(struct uvc_device *dev,
 	 * This switch will need extending for any new formats that are added
 	 * to ensure the buffer size calculations are done correctly.
 	 */
-	switch (format->fcc) {
-	case V4L2_PIX_FMT_YUYV:
-	case V4L2_PIX_FMT_MJPEG:
-		ctrl->dwMaxVideoFrameSize = frame->width * frame->height * 2;
-		break;
+	switch (format->fcc)
+	{
+		case V4L2_PIX_FMT_YUYV:
+		case V4L2_PIX_FMT_MJPEG:
+			ctrl->dwMaxVideoFrameSize = frame->width * frame->height * 2;
+			break;
 	}
 
 	ctrl->dwMaxPayloadTransferSize = dev->fc->streaming.ep.wMaxPacketSize;
@@ -336,7 +340,8 @@ uvc_events_process_data(struct uvc_device *dev,
 	uvc_fill_streaming_control(dev, target, ctrl->bFormatIndex,
 				   ctrl->bFrameIndex, ctrl->dwFrameInterval);
 
-	if (dev->control == UVC_VS_COMMIT_CONTROL) {
+	if (dev->control == UVC_VS_COMMIT_CONTROL)
+	{
 		const struct uvc_function_config_format *format;
 		const struct uvc_function_config_frame *frame;
 		struct v4l2_pix_format pixfmt;
@@ -354,6 +359,7 @@ uvc_events_process_data(struct uvc_device *dev,
 		pixfmt.height = frame->height;
 		pixfmt.pixelformat = format->fcc;
 		pixfmt.field = V4L2_FIELD_NONE;
+		
 		if (format->fcc == V4L2_PIX_FMT_MJPEG)
 			pixfmt.sizeimage = target->dwMaxVideoFrameSize;
 
@@ -374,7 +380,9 @@ static void uvc_events_process(void *d)
 	int ret;
 
 	ret = ioctl(dev->vdev->fd, VIDIOC_DQEVENT, &v4l2_event);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("VIDIOC_DQEVENT failed: %s (%d)\n", strerror(errno),
 			errno);
 		return;
@@ -412,7 +420,9 @@ static void uvc_events_process(void *d)
 	}
 
 	ret = ioctl(dev->vdev->fd, UVCIOC_SEND_RESPONSE, &resp);
-	if (ret < 0) {
+	
+	if (ret < 0)
+	{
 		printf("UVCIOC_SEND_RESPONSE failed: %s (%d)\n",
 		       strerror(errno), errno);
 		return;
