@@ -102,15 +102,14 @@ static int attribute_read(const char *path, const char *file, void *buf, unsigne
 	int ret;
 	int fd;
 
-	printf("attribute_read: Reading attribute from path='%s', file='%s', buffer size=%u\n", path, file, len);
+	printf("attribute_read: Reading attribute file='%s' from path='%s'\n", file, path);
 
 	f = path_join(path, file);
-	if (!f) {
+	if (!f)
+	{
 		printf("attribute_read: Failed to allocate memory for file path '%s/%s'\n", path, file);
 		return -ENOMEM;
 	}
-
-	printf("attribute_read: Full file path='%s'\n", f);
 
 	fd = open(f, O_RDONLY);
 	free(f);
@@ -120,12 +119,11 @@ static int attribute_read(const char *path, const char *file, void *buf, unsigne
 		return -ENOENT;
 	}
 
-	printf("attribute_read: Successfully opened file '%s/%s'\n", path, file);
-
 	ret = read(fd, buf, len);
 	close(fd);
 
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		printf("attribute_read: Failed to read from file '%s/%s': %s\n", path, file, strerror(errno));
 		return -ENODATA;
 	}
@@ -142,7 +140,7 @@ static int attribute_read_uint(const char *path, const char *file, unsigned int 
 	char *endptr;
 	int ret;
 
-	printf("attribute_read_uint: Reading from path='%s', file='%s'\n", path, file);
+	printf("attribute_read_uint: file='%s' from path='%s'\n", file, path);
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
@@ -182,7 +180,7 @@ static char *attribute_read_str(const char *path, const char *file)
 	char *p;
 	int ret;
 
-	printf("attribute_read_str: Reading from path='%s', file='%s'\n", path, file);
+	printf("attribute_read_str:  file='%s' from path='%s'\n", file, path);
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
@@ -192,15 +190,11 @@ static char *attribute_read_str(const char *path, const char *file)
 	}
 
 	buf[ret] = '\0';
-	printf("attribute_read_str: Raw value read: '%s'\n", buf);
 
 	/* Remove trailing newline if present */
 	p = strrchr(buf, '\n');
 	if (p != NULL && p != buf)
-	{
 		*p = '\0';
-		printf("attribute_read_str: Newline removed. Processed value: '%s'\n", buf);
-	}
 
 	char *result = strdup(buf);
 	if (result == NULL)
@@ -451,13 +445,17 @@ static char *configfs_mount_point(void)
 	char *line = NULL;
 	char *path = NULL;
 	size_t len = 0;
-	
-	printf("configfs_mount_point\n");
+
+	printf("configfs_mount_point: Searching for ConfigFS mount point.\n");
 
 	mounts = fopen("/proc/mounts", "r");
-	
 	if (mounts == NULL)
+	{
+		printf("configfs_mount_point: Failed to open '/proc/mounts'.\n");
 		return NULL;
+	}
+
+	printf("configfs_mount_point: Reading '/proc/mounts' to locate ConfigFS.\n");
 
 	while (getline(&line, &len, mounts) != -1)
 	{
@@ -466,16 +464,28 @@ static char *configfs_mount_point(void)
 			char *saveptr;
 			char *token;
 
-			/* Obtain the second token. */
+			printf("configfs_mount_point: Found ConfigFS entry in '/proc/mounts': '%s'\n", line);
+
+			/* Obtain the second token (the mount point). */
 			token = strtok_r(line, " ", &saveptr);
 			token = strtok_r(NULL, " ", &saveptr);
 
 			if (token)
+			{
 				path = strdup(token);
+				printf("configfs_mount_point: ConfigFS mount point is '%s'.\n", path);
+			}
+			else
+			{
+				printf("configfs_mount_point: Failed to parse mount point from line: '%s'\n", line);
+			}
 
 			break;
 		}
 	}
+
+	if (!path)
+		printf("configfs_mount_point: ConfigFS mount point not found.\n");
 
 	free(line);
 	fclose(mounts);
@@ -501,7 +511,7 @@ static char *configfs_find_uvc_function(const char *function)
     int ret;
 
     // Log the input parameter
-    printf("configfs_find_uvc_function: Searching for function='%s'\n", function ? function : "(null)");
+    printf("configfs_find_uvc_function: '%s'\n", function ? function : "(null)");
 
     configfs = configfs_mount_point();
     if (!configfs)
