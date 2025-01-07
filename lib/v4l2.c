@@ -209,7 +209,9 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 	unsigned int i;
 	int ret;
 
-	for (i = 0; ; ++i)
+	printf("/ Enumerating formats for device: %s\n", dev->name);
+
+	for (i = 0;; ++i)
 	{
 		struct v4l2_fmtdesc fmtenum;
 
@@ -218,18 +220,20 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 		fmtenum.type = dev->type;
 
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FMT, &fmtenum);
-		
 		if (ret < 0)
 			break;
 
+		// Check for mismatched indices and types
 		if (i != fmtenum.index)
 			printf("Warning: driver returned wrong format index %u.\n", fmtenum.index);
-		
 		if (dev->type != fmtenum.type)
 			printf("Warning: driver returned wrong format type %u.\n", fmtenum.type);
 
+		// Log the format being added
+		printf("| Format %u: pixelformat=0x%x, description='%s'\n",
+			   i, fmtenum.pixelformat, fmtenum.description);
+
 		format = malloc(sizeof *format);
-		
 		if (format == NULL)
 			return -ENOMEM;
 
@@ -238,14 +242,16 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 		list_init(&format->frames);
 		format->pixelformat = fmtenum.pixelformat;
 
+		// Add format to the list
 		list_append(&format->list, &dev->formats);
 
+		// Enumerate frame sizes for the current format
 		ret = v4l2_enum_frame_sizes(dev, format);
-		
 		if (ret < 0)
 			return ret;
 	}
 
+	printf("\\ Finished enumerating formats.\n");
 	return 0;
 }
 
@@ -282,7 +288,7 @@ struct v4l2_device *v4l2_open(const char *devname)
 	}
 
 	memset(&cap, 0, sizeof cap);
-	ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap);
+	ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap); //equivalent to command line: v4l2-ctl --device=/dev/video0 --all
 	
 	if (ret < 0)
 	{
@@ -537,6 +543,8 @@ int v4l2_set_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	struct v4l2_format fmt;
 	int ret;
 
+	printf("v4l2_set_format: Setting format on device %s\n", dev->name);
+
 	memset(&fmt, 0, sizeof fmt);
 	fmt.type = dev->type;
 	fmt.fmt.pix.width = format->width;
@@ -545,13 +553,30 @@ int v4l2_set_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	fmt.fmt.pix.field = V4L2_FIELD_ANY;
 	fmt.fmt.pix.sizeimage = format->sizeimage;
 
+	// Log the values being set
+	printf("Requested format:\n");
+	printf("  Width: %u\n", fmt.fmt.pix.width);
+	printf("  Height: %u\n", fmt.fmt.pix.height);
+	printf("  Pixel Format: 0x%x\n", fmt.fmt.pix.pixelformat);
+	printf("  Field: %d\n", fmt.fmt.pix.field);
+	printf("  Size Image: %u\n", fmt.fmt.pix.sizeimage);
+
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
-	
+
 	if (ret < 0)
 	{
 		printf("%s: unable to set format (%d).\n", dev->name, errno);
 		return -errno;
 	}
+
+	// Log the result of setting the format
+	printf("Format successfully set.\n");
+	printf("Resulting format:\n");
+	printf("  Width: %u\n", fmt.fmt.pix.width);
+	printf("  Height: %u\n", fmt.fmt.pix.height);
+	printf("  Pixel Format: 0x%x\n", fmt.fmt.pix.pixelformat);
+	printf("  Field: %d\n", fmt.fmt.pix.field);
+	printf("  Size Image: %u\n", fmt.fmt.pix.sizeimage);
 
 	dev->format = fmt.fmt.pix;
 	*format = fmt.fmt.pix;
@@ -564,18 +589,26 @@ int v4l2_set_frame_rate(struct v4l2_device *dev, unsigned int fps)
 	struct v4l2_streamparm parm;
 	int ret;
 
+	printf("v4l2_set_frame_rate: Setting frame rate on device %s to %u FPS\n", dev->name, fps);
+
 	memset(&parm, 0, sizeof parm);
 	parm.type = dev->type;
 	parm.parm.capture.timeperframe.numerator = 1;
 	parm.parm.capture.timeperframe.denominator = fps;
 
 	ret = ioctl(dev->fd, VIDIOC_S_PARM, &parm);
-	
+
 	if (ret < 0)
 	{
 		printf("%s: unable to set frame rate (%d).\n", dev->name, errno);
 		return -errno;
 	}
+
+	printf("Frame rate successfully set to %.2f FPS (Numerator: %u, Denominator: %u).\n",
+		   (float)parm.parm.capture.timeperframe.denominator /
+		   parm.parm.capture.timeperframe.numerator,
+		   parm.parm.capture.timeperframe.numerator,
+		   parm.parm.capture.timeperframe.denominator);
 
 	dev->fps = fps;
 	return 0;
@@ -591,6 +624,8 @@ int v4l2_alloc_buffers(struct v4l2_device *dev, enum v4l2_memory memtype,
 	struct v4l2_requestbuffers rb;
 	unsigned int i;
 	int ret;
+	
+	printf("v4l2_alloc_buffers\n");
 
 	if (dev->buffers.nbufs != 0)
 		return -EBUSY;

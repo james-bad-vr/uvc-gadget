@@ -126,8 +126,7 @@ static int uvc_stream_start_alloc(struct uvc_stream *stream)
 	video_source_stream_on(stream->src);
 	v4l2_stream_on(sink);
 
-	events_watch_fd(stream->events, sink->fd, EVENT_WRITE,
-			uvc_stream_uvc_process, stream);
+	events_watch_fd(stream->events, sink->fd, EVENT_WRITE, uvc_stream_uvc_process, stream);
 
 	return 0;
 
@@ -150,7 +149,8 @@ static int uvc_stream_start_no_alloc(struct uvc_stream *stream)
 
 	/* Allocate buffers on the sink. */
 	ret = v4l2_alloc_buffers(sink, V4L2_MEMORY_MMAP, 4);
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		printf("Failed to allocate sink buffers: %s (%d)\n",
 		       strerror(-ret), -ret);
 		return ret;
@@ -158,14 +158,16 @@ static int uvc_stream_start_no_alloc(struct uvc_stream *stream)
 
 	/* mmap buffers. */
 	ret = v4l2_mmap_buffers(sink);
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		printf("Failed to query sink buffers: %s (%d)\n",
 				strerror(-ret), -ret);
 		return ret;
 	}
 
 	/* Queue buffers to sink. */
-	for (i = 0; i < sink->buffers.nbufs; ++i) {
+	for (i = 0; i < sink->buffers.nbufs; ++i)
+	{
 		struct video_buffer buf = {
 			.index = i,
 			.size = sink->buffers.buffers[i].size,
@@ -174,6 +176,7 @@ static int uvc_stream_start_no_alloc(struct uvc_stream *stream)
 
 		video_source_fill_buffer(stream->src, &buf);
 		ret = v4l2_queue_buffer(sink, &buf);
+		
 		if (ret < 0)
 			return ret;
 	}
@@ -181,11 +184,11 @@ static int uvc_stream_start_no_alloc(struct uvc_stream *stream)
 	/* Start the source and sink. */
 	video_source_stream_on(stream->src);
 	ret = v4l2_stream_on(sink);
+	
 	if (ret < 0)
 		return ret;
 
-	events_watch_fd(stream->events, sink->fd, EVENT_WRITE,
-			uvc_stream_uvc_process_no_buf, stream);
+	events_watch_fd(stream->events, sink->fd, EVENT_WRITE, uvc_stream_uvc_process_no_buf, stream);
 
 	return 0;
 }
@@ -207,7 +210,8 @@ static int uvc_stream_start_encoded(struct uvc_stream *stream)
 
 	/* Allocate buffers on the sink. */
 	ret = v4l2_alloc_buffers(sink, V4L2_MEMORY_MMAP, 4);
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		printf("Failed to allocate sink buffers: %s (%d)\n",
 		       strerror(-ret), -ret);
 		goto error_free_source;
@@ -215,7 +219,8 @@ static int uvc_stream_start_encoded(struct uvc_stream *stream)
 
 	/* mmap buffers. */
 	ret = v4l2_mmap_buffers(sink);
-	if (ret < 0) {
+	if (ret < 0)
+	{
 		printf("Failed to query sink buffers: %s (%d)\n",
 				strerror(-ret), -ret);
 		goto error_free_sink;
@@ -223,7 +228,8 @@ static int uvc_stream_start_encoded(struct uvc_stream *stream)
 
 	/* Import the sink's buffers to the source */
 	ret = video_source_import_buffers(stream->src, &sink->buffers);
-	if (ret) {
+	if (ret)
+	{
 		printf("Failed to import sink buffers: %s (%d)\n",
 		       strerror(ret), ret);
 		goto error_free_sink;
@@ -233,8 +239,7 @@ static int uvc_stream_start_encoded(struct uvc_stream *stream)
 	video_source_stream_on(stream->src);
 	v4l2_stream_on(sink);
 
-	events_watch_fd(stream->events, sink->fd, EVENT_WRITE,
-			uvc_stream_uvc_process, stream);
+	events_watch_fd(stream->events, sink->fd, EVENT_WRITE, uvc_stream_uvc_process, stream);
 
 	return 0;
 

@@ -96,62 +96,82 @@ static char *dir_first_match(const char *dir, int(*match)(const struct dirent *)
  * Attribute handling
  */
 
-static int attribute_read(const char *path, const char *file, void *buf,
-			  unsigned int len)
+static int attribute_read(const char *path, const char *file, void *buf, unsigned int len)
 {
 	char *f;
 	int ret;
 	int fd;
 
+	printf("attribute_read: Reading attribute from path='%s', file='%s', buffer size=%u\n", path, file, len);
+
 	f = path_join(path, file);
-	if (!f)
+	if (!f) {
+		printf("attribute_read: Failed to allocate memory for file path '%s/%s'\n", path, file);
 		return -ENOMEM;
+	}
+
+	printf("attribute_read: Full file path='%s'\n", f);
 
 	fd = open(f, O_RDONLY);
 	free(f);
+
 	if (fd == -1) {
-		printf("Failed to open attribute %s: %s\n", file,
-		       strerror(errno));
+		printf("attribute_read: Failed to open file '%s/%s': %s\n", path, file, strerror(errno));
 		return -ENOENT;
 	}
+
+	printf("attribute_read: Successfully opened file '%s/%s'\n", path, file);
 
 	ret = read(fd, buf, len);
 	close(fd);
 
 	if (ret < 0) {
-		printf("Failed to read attribute %s: %s\n", file,
-		       strerror(errno));
+		printf("attribute_read: Failed to read from file '%s/%s': %s\n", path, file, strerror(errno));
 		return -ENODATA;
 	}
 
-	return len;
+	printf("attribute_read: Successfully read %d bytes from file '%s/%s'\n", ret, path, file);
+
+	return ret;
 }
 
-static int attribute_read_uint(const char *path, const char *file,
-			       unsigned int *val)
+static int attribute_read_uint(const char *path, const char *file, unsigned int *val)
 {
 	/* 4,294,967,295 */
 	char buf[11];
 	char *endptr;
 	int ret;
-	
-	printf("attribute_read_uint\n");
+
+	printf("attribute_read_uint: Reading from path='%s', file='%s'\n", path, file);
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
+	{
+		printf("attribute_read_uint: Failed to read from '%s/%s', error=%d\n", path, file, ret);
 		return ret;
+	}
 
 	buf[ret] = '\0';
+	printf("attribute_read_uint: Raw value read: '%s'\n", buf);
 
 	errno = 0;
 
 	/* base 0: Autodetect hex, octal, decimal. */
 	*val = strtoul(buf, &endptr, 0);
+
 	if (errno)
+	{
+		printf("attribute_read_uint: Failed to parse value. errno=%d\n", errno);
 		return -errno;
+	}
 
 	if (endptr == buf)
+	{
+		printf("attribute_read_uint: No numeric value found in '%s'\n", buf);
 		return -ENODATA;
+	}
+
+	printf("attribute_read_uint: Parsed value=%u from '%s/%s'\n", *val, path, file);
 
 	return 0;
 }
@@ -161,20 +181,36 @@ static char *attribute_read_str(const char *path, const char *file)
 	char buf[1024];
 	char *p;
 	int ret;
-	
-	printf("attribute_read_str\n");
+
+	printf("attribute_read_str: Reading from path='%s', file='%s'\n", path, file);
 
 	ret = attribute_read(path, file, buf, sizeof(buf) - 1);
 	if (ret < 0)
+	{
+		printf("attribute_read_str: Failed to read from '%s/%s', error=%d\n", path, file, ret);
 		return NULL;
+	}
 
 	buf[ret] = '\0';
+	printf("attribute_read_str: Raw value read: '%s'\n", buf);
 
+	/* Remove trailing newline if present */
 	p = strrchr(buf, '\n');
-	if (p != buf)
+	if (p != NULL && p != buf)
+	{
 		*p = '\0';
+		printf("attribute_read_str: Newline removed. Processed value: '%s'\n", buf);
+	}
 
-	return strdup(buf);
+	char *result = strdup(buf);
+	if (result == NULL)
+	{
+		printf("attribute_read_str: Memory allocation failed for string duplication.\n");
+		return NULL;
+	}
+
+	printf("attribute_read_str: Successfully processed string: '%s'\n", result);
+	return result;
 }
 
 /* -----------------------------------------------------------------------------
@@ -361,8 +397,7 @@ static void *memdup(const void *src, size_t size)
 	return dst;
 }
 
-static int parse_legacy_g_webcam(const char *udc,
-				 struct uvc_function_config *fc)
+static int parse_legacy_g_webcam(const char *udc, struct uvc_function_config *fc)
 {
 	unsigned int i, j;
 	size_t size;
@@ -416,13 +451,18 @@ static char *configfs_mount_point(void)
 	char *line = NULL;
 	char *path = NULL;
 	size_t len = 0;
+	
+	printf("configfs_mount_point\n");
 
 	mounts = fopen("/proc/mounts", "r");
+	
 	if (mounts == NULL)
 		return NULL;
 
-	while (getline(&line, &len, mounts) != -1) {
-		if (strstr(line, "configfs")) {
+	while (getline(&line, &len, mounts) != -1)
+	{
+		if (strstr(line, "configfs"))
+		{
 			char *saveptr;
 			char *token;
 
@@ -453,39 +493,52 @@ static char *configfs_mount_point(void)
  */
 static char *configfs_find_uvc_function(const char *function)
 {
-	const char *target = function ? function : "*";
-	const char *format;
-	char *configfs;
-	char *func_path;
-	char *path;
-	int ret;
-	
-	printf("configfs_find_uvc_function\n");
+    const char *target = function ? function : "*";
+    const char *format;
+    char *configfs;
+    char *func_path;
+    char *path;
+    int ret;
 
-	configfs = configfs_mount_point();
-	if (!configfs)
-		printf("Failed to locate configfs mount point, using default\n");
+    // Log the input parameter
+    printf("configfs_find_uvc_function: Searching for function='%s'\n", function ? function : "(null)");
 
-	/*
-	 * The function description can be provided as a path from the
-	 * usb_gadget root "g1/functions/uvc.0", or if there is no ambiguity
-	 * over the gadget name, a shortcut "uvc.0" can be provided.
-	 */
-	if (!strchr(target, '/'))
-		format = "%s/usb_gadget/*/functions/%s";
-	else
-		format = "%s/usb_gadget/%s";
+    configfs = configfs_mount_point();
+    if (!configfs)
+        printf("configfs_find_uvc_function: Failed to locate configfs mount point, using default\n");
 
-	ret = asprintf(&path, format, configfs ? configfs : "/sys/kernel/config",
-		       target);
-	free(configfs);
-	if (!ret)
-		return NULL;
+    /*
+     * The function description can be provided as a path from the
+     * usb_gadget root "g1/functions/uvc.0", or if there is no ambiguity
+     * over the gadget name, a shortcut "uvc.0" can be provided.
+     */
+    if (!strchr(target, '/'))
+        format = "%s/usb_gadget/*/functions/%s";
+    else
+        format = "%s/usb_gadget/%s";
 
-	func_path = path_glob_first_match(path);
-	free(path);
+    printf("configfs_find_uvc_function: Using format='%s'\n", format);
 
-	return func_path;
+    ret = asprintf(&path, format, configfs ? configfs : "/sys/kernel/config", target);
+    free(configfs);
+
+    if (!ret)
+    {
+        printf("configfs_find_uvc_function: Failed to format path.\n");
+        return NULL;
+    }
+
+    printf("configfs_find_uvc_function: Formatted path='%s'\n", path);
+
+    func_path = path_glob_first_match(path);
+    free(path);
+
+    if (func_path)
+        printf("configfs_find_uvc_function: Found function path='%s'\n", func_path);
+    else
+        printf("configfs_find_uvc_function: No matching function path found.\n");
+
+    return func_path;
 }
 
 /*
