@@ -435,28 +435,44 @@ static void uvc_events_process(void *d)
 
 void uvc_events_init(struct uvc_device *dev, struct events *events)
 {
-	struct v4l2_event_subscription sub;
-	
-	printf("uvc_events_init\n");
+    struct v4l2_event_subscription sub;
+    
+    printf("uvc_events_init\n");
+    printf("VIDIOC_SUBSCRIBE_EVENT = 0x%08x\n", VIDIOC_SUBSCRIBE_EVENT);
 
-	/* Default to the minimum values. */
-	uvc_fill_streaming_control(dev, &dev->probe, 1, 1, 0);
-	uvc_fill_streaming_control(dev, &dev->commit, 1, 1, 0);
+    /* Default to the minimum values. */
+    uvc_fill_streaming_control(dev, &dev->probe, 1, 1, 0);
+    uvc_fill_streaming_control(dev, &dev->commit, 1, 1, 0);
 
-	
-	memset(&sub, 0, sizeof sub);
-	sub.type = UVC_EVENT_SETUP;
-	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub); //This line causes the camera to connect
-	sub.type = UVC_EVENT_DATA;
-	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	sub.type = UVC_EVENT_STREAMON;
-	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	sub.type = UVC_EVENT_STREAMOFF;
-	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	
+    printf("Size of v4l2_event_subscription struct: %zu bytes\n", sizeof(struct v4l2_event_subscription));
+    
+    memset(&sub, 0, sizeof sub);
+    sub.type = UVC_EVENT_SETUP;
+    printf("UVC_EVENT_SETUP = %d (0x%08x)\n", sub.type, sub.type);
+    printf("Subscribing to SETUP - sub struct: type=%u, id=%u, flags=%u\n", 
+           sub.type, sub.id, sub.flags);
+    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
 
-	events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION,
-			uvc_events_process, dev);
+    sub.type = UVC_EVENT_DATA;
+    printf("UVC_EVENT_DATA = %d (0x%08x)\n", sub.type, sub.type);
+    printf("Subscribing to DATA - sub struct: type=%u, id=%u, flags=%u\n", 
+           sub.type, sub.id, sub.flags);
+    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+
+    sub.type = UVC_EVENT_STREAMON;
+    printf("UVC_EVENT_STREAMON = %d (0x%08x)\n", sub.type, sub.type);
+    printf("Subscribing to STREAMON - sub struct: type=%u, id=%u, flags=%u\n", 
+           sub.type, sub.id, sub.flags);
+    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+
+    sub.type = UVC_EVENT_STREAMOFF;
+    printf("UVC_EVENT_STREAMOFF = %d (0x%08x)\n", sub.type, sub.type);
+    printf("Subscribing to STREAMOFF - sub struct: type=%u, id=%u, flags=%u\n", 
+           sub.type, sub.id, sub.flags);
+    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+
+    events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION,
+            uvc_events_process, dev);
 }
 
 void uvc_set_config(struct uvc_device *dev, struct uvc_function_config *fc)
