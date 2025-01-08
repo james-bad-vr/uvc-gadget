@@ -443,13 +443,13 @@ void uvc_events_init(struct uvc_device *dev, struct events *events)
 	uvc_fill_streaming_control(dev, &dev->probe, 1, 1, 0);
 	uvc_fill_streaming_control(dev, &dev->commit, 1, 1, 0);
 
-	/*
+	
 	memset(&sub, 0, sizeof sub);
 	sub.type = UVC_EVENT_SETUP;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
 	sub.type = UVC_EVENT_DATA;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	sub.type = UVC_EVENT_STREAMON;
+	/*sub.type = UVC_EVENT_STREAMON;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
 	sub.type = UVC_EVENT_STREAMOFF;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
