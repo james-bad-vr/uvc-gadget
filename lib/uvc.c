@@ -83,6 +83,16 @@ static const char *uvc_pu_control_names[] = {
 	[UVC_PU_ANALOG_LOCK_STATUS_CONTROL] = "ANALOG_LOCK_STATUS",
 };
 
+// Debug function to print memory in hex
+static void hexdump(const void* data, size_t size) {
+    const unsigned char* d = (const unsigned char*)data;
+    for (size_t i = 0; i < size; i++) {
+        printf("%02x ", d[i]);
+        if ((i + 1) % 16 == 0) printf("\n");
+    }
+    printf("\n");
+}
+
 static const char *pu_control_name(uint8_t cs)
 {
     if (cs < ARRAY_SIZE(uvc_pu_control_names))
@@ -373,23 +383,40 @@ uvc_events_process_data(struct uvc_device *dev,
 
 static void uvc_events_process(void *d)
 {
-	struct uvc_device *dev = d;
-	struct v4l2_event v4l2_event;
-	const struct uvc_event *uvc_event = (void *)&v4l2_event.u.data;
-	struct uvc_request_data resp;
-	int ret;
+  	struct uvc_device *dev = d;
+    struct v4l2_event v4l2_event;
+    const struct uvc_event *uvc_event = (void *)&v4l2_event.u.data;
+    struct uvc_request_data resp;
+    int ret;
 
-	ret = ioctl(dev->vdev->fd, VIDIOC_DQEVENT, &v4l2_event);
-	
-	if (ret < 0)
-	{
-		printf("VIDIOC_DQEVENT failed: %s (%d)\n", strerror(errno),
-			errno);
-		return;
-	}
+    // Print structure sizes
+    printf("\nStructure sizes:\n");
+    printf("v4l2_event size: %zu bytes\n", sizeof(struct v4l2_event));
+    printf("v4l2_event.u.data size: %zu bytes\n", sizeof(v4l2_event.u.data));
+    
+    ret = ioctl(dev->vdev->fd, VIDIOC_DQEVENT, &v4l2_event);
+    
+    if (ret < 0) {
+        printf("VIDIOC_DQEVENT failed: %s (%d)\n", strerror(errno), errno);
+        return;
+    }
 
-	memset(&resp, 0, sizeof resp);
-	resp.length = -EL2HLT;
+    // Print event details
+    printf("\nEvent details:\n");
+    printf("event.type: 0x%08x\n", v4l2_event.type);
+    printf("event.pending: %u\n", v4l2_event.pending);
+    printf("event.sequence: %u\n", v4l2_event.sequence);
+    printf("event.id: %u\n", v4l2_event.id);
+    
+    // Print first few bytes of data in hex
+    printf("event.u.data (first 16 bytes): ");
+    for (int i = 0; i < 16; i++) {
+        printf("%02x ", v4l2_event.u.data[i]);
+    }
+    printf("\n");
+
+    memset(&resp, 0, sizeof resp);
+    resp.length = -EL2HLT;
 
 	switch (v4l2_event.type)
 	{
