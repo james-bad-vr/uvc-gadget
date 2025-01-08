@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
 	uvc_stream_set_event_handler(stream, &events);
 	
 	printf("uvc_stream_set_video_source\n");
-	//uvc_stream_set_video_source(stream, src);
+	uvc_stream_set_video_source(stream, src);
 	
 	printf("uvc_stream_init_uvc\n");
 	//uvc_stream_init_uvc(stream, fc);
