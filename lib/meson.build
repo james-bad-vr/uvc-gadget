@@ -8,7 +8,6 @@ libuvcgadget_sources = files([
   'timer.c',
   'uvc.c',
   'v4l2.c',
-  'v4l2-source.c',
   'video-buffers.c',
   'video-source.c',
 ])
