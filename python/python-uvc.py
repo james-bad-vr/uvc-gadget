@@ -52,18 +52,30 @@ def handle_setup_event(fd, event):
     print(f"Setup Request: bmRequestType=0x{bmRequestType:02x}, bRequest=0x{bRequest:02x}, "
           f"wValue=0x{wValue:04x}, wIndex=0x{wIndex:04x}, wLength=0x{wLength:04x}")
 
-    # Handle PROBE and COMMIT control requests
-    if bmRequestType == 0x21:  # Host-to-device, Interface
-        if bRequest == 0x01:  # SET_CUR
-            print("-> Host is setting streaming parameters (PROBE/COMMIT).")
-            response = struct.pack('i124s', 0, b'\0' * 124)  # Example response
-            send_response(fd, response)
-        elif bRequest == 0x81:  # GET_CUR
-            print("-> Host is requesting current streaming parameters.")
-            response = struct.pack('i124s', 0, b'\x00' * 124)  # Current settings
-            send_response(fd, response)
+    response_data = None
+
+    if bmRequestType == 0xA1:  # Class-specific GET requests
+        if bRequest == 0x86:  # GET_INFO
+            print("-> GET_INFO: Returning info about the control.")
+            response_data = struct.pack('<B', 0x03)  # Support GET/SET
+        elif bRequest == 0x82:  # GET_MIN
+            print("-> GET_MIN: Returning minimum value.")
+            response_data = struct.pack('<H', 0x0000)  # Example minimum value
+        elif bRequest == 0x83:  # GET_MAX
+            print("-> GET_MAX: Returning maximum value.")
+            response_data = struct.pack('<H', 0x00FF)  # Example maximum value
+        elif bRequest == 0x84:  # GET_RES
+            print("-> GET_RES: Returning resolution step.")
+            response_data = struct.pack('<H', 0x0001)  # Example resolution step
+        elif bRequest == 0x87:  # GET_DEF
+            print("-> GET_DEF: Returning default value.")
+            response_data = struct.pack('<H', 0x007F)  # Example default value
+
+    if response_data is not None:
+        padded_response = response_data.ljust(124, b'\0')  # Ensure the response fits 124 bytes
+        send_response(fd, padded_response)
     else:
-        print("-> Unknown or unsupported request.")
+        print("-> Unsupported or unhandled request.")
 
 def handle_streaming(fd, stream_on):
     if stream_on:
