@@ -278,7 +278,7 @@ struct v4l2_device *v4l2_open(const char *devname)
 	dev->name = strdup(devname);
 	list_init(&dev->formats);
 
-	//dev->fd = open(devname, O_RDWR | O_NONBLOCK);
+	dev->fd = open(devname, O_RDWR | O_NONBLOCK);
 	
 	if (dev->fd < 0)
 	{
