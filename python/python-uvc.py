@@ -42,7 +42,7 @@ def handle_setup_event(fd, event_data):
     print(f"Setup Request: bmRequestType=0x{bmRequestType:02x} bRequest=0x{bRequest:02x} "
           f"wValue=0x{wValue:04x} wIndex=0x{wIndex:04x} wLength=0x{wLength:04x}")
 
-    response_data = struct.pack('i124s', 0, b'\0' * 124)  # 128 bytes total
+    response_data = struct.pack('i124s', 0, b'\0' * 124)
     send_response(fd, response_data)
 
 def handle_event(fd):
@@ -50,29 +50,43 @@ def handle_event(fd):
     event_buf = bytearray(96)
     
     try:
+        # Debug print
+        print("Trying to dequeue event...")
+        
         fcntl.ioctl(fd, VIDIOC_DQEVENT, event_buf)
+        
+        # Debug print full event buffer in hex
+        print(f"Raw event data: {event_buf.hex()}")
+        
         event_type = struct.unpack('I', event_buf[0:4])[0]
+        print(f"Event type: 0x{event_type:08x}")
         
         if event_type == UVC_EVENT_SETUP:
+            print("-> UVC_EVENT_SETUP received")
             handle_setup_event(fd, event_buf)
         elif event_type == UVC_EVENT_DATA:
-            data = event_buf[4:8]  # First 4 bytes after event type
-            print(f"Data event received: {data.hex()}")
+            print("-> UVC_EVENT_DATA received")
+            data = event_buf[4:8]
+            print(f"Data event payload: {data.hex()}")
         elif event_type == UVC_EVENT_STREAMON:
             streaming = True
-            print("\n=== Stream ON requested by host (e.g., OBS Studio) ===")
-            print("Host is requesting to start video streaming")
-            print("This typically happens when you select the UVC device in your application")
+            print("\n-> UVC_EVENT_STREAMON received")
+            print("=== Stream ON requested by host ===")
         elif event_type == UVC_EVENT_STREAMOFF:
             streaming = False
-            print("\n=== Stream OFF requested by host ===")
-            print("Host has stopped video streaming")
-            print("This typically happens when you close the video preview or select a different device")
-    except Exception as e:
-        if hasattr(e, 'errno') and e.errno == 11:  # EAGAIN
-            pass
+            print("\n-> UVC_EVENT_STREAMOFF received")
+            print("=== Stream OFF requested by host ===")
         else:
-            print(f"Error handling event: {e}")
+            print(f"-> Unknown event type: 0x{event_type:08x}")
+            
+    except Exception as e:
+        if hasattr(e, 'errno'):
+            if e.errno == 11:  # EAGAIN
+                print(".", end="", flush=True)  # Just print a dot for no events
+            else:
+                print(f"\nError handling event (errno={e.errno}): {e}")
+        else:
+            print(f"\nUnexpected error: {e}")
 
 def main():
     try:
@@ -91,16 +105,24 @@ def main():
                 os.close(fd)
                 return
 
-        print("\nDevice ready - Waiting for events...")
-        print("Open OBS Studio or another application and select the UVC device")
+        print("\nDevice ready - starting event loop")
+        print("Will print '.' when polling and full details when events arrive")
         
         poll = select.poll()
         poll.register(fd, select.POLLIN | select.POLLPRI)
         
         while True:
+            # Debug: print what we're waiting for
             events = poll.poll(1000)  # 1 second timeout
-            for fd, event in events:
-                handle_event(fd)
+            if events:
+                print("\nReceived poll event!")
+                for fd, event_mask in events:
+                    print(f"Event mask: 0x{event_mask:04x}")
+                    if event_mask & select.POLLIN:
+                        print("POLLIN event")
+                    if event_mask & select.POLLPRI:
+                        print("POLLPRI event")
+                    handle_event(fd)
             time.sleep(0.01)
 
     except KeyboardInterrupt:
