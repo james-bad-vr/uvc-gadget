@@ -53,8 +53,6 @@ summary({ 'Sources': uvc_gadget_git_version, }, section : 'Versions')
 # Configure the build environment.
 cc = meson.get_compiler('c')
 
-libcamera = dependency('libcamera', required : false)
-libjpeg = dependency('libjpeg', required : false)
 threads = dependency('threads', required : false)
 
 conf = configuration_data()
