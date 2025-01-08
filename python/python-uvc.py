@@ -46,47 +46,48 @@ def send_response(fd, data):
         print(f"Error sending response: {e}")
 
 def handle_setup_event(fd, event):
-    # First 8 bytes of event.u contain the setup packet
     setup_data = bytes(event.u[0:8])
-    bmRequestType, bRequest, wValue, wIndex, wLength = struct.unpack('<BBHHHH', setup_data[:8])
+    bmRequestType, bRequest, wValue, wIndex, wLength = struct.unpack('<BBHHH', setup_data)
     
-    print(f"Setup Request: bmRequestType=0x{bmRequestType:02x} bRequest=0x{bRequest:02x} "
-          f"wValue=0x{wValue:04x} wIndex=0x{wIndex:04x} wLength=0x{wLength:04x}")
+    print(f"Setup Request: bmRequestType=0x{bmRequestType:02x}, bRequest=0x{bRequest:02x}, "
+          f"wValue=0x{wValue:04x}, wIndex=0x{wIndex:04x}, wLength=0x{wLength:04x}")
 
-    response_data = struct.pack('i124s', 0, b'\0' * 124)
-    send_response(fd, response_data)
+    # Handle PROBE and COMMIT control requests
+    if bmRequestType == 0x21:  # Host-to-device, Interface
+        if bRequest == 0x01:  # SET_CUR
+            print("-> Host is setting streaming parameters (PROBE/COMMIT).")
+            response = struct.pack('i124s', 0, b'\0' * 124)  # Example response
+            send_response(fd, response)
+        elif bRequest == 0x81:  # GET_CUR
+            print("-> Host is requesting current streaming parameters.")
+            response = struct.pack('i124s', 0, b'\x00' * 124)  # Current settings
+            send_response(fd, response)
+    else:
+        print("-> Unknown or unsupported request.")
+
+def handle_streaming(fd, stream_on):
+    if stream_on:
+        print("Stream ON: Starting video stream.")
+        # TODO: Add logic for buffer allocation and streaming
+    else:
+        print("Stream OFF: Stopping video stream.")
+        # TODO: Release buffers and stop the stream
+
 
 def handle_event(fd):
     event = v4l2_event()
-    
     try:
-        print("Trying to dequeue event...")
         fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
-        
-        print(f"Event type: 0x{event.type:08x}")
-        
         if event.type == UVC_EVENT_SETUP:
-            print("-> UVC_EVENT_SETUP received")
             handle_setup_event(fd, event)
-        elif event.type == UVC_EVENT_DATA:
-            print("-> UVC_EVENT_DATA received")
         elif event.type == UVC_EVENT_STREAMON:
-            print("\n-> UVC_EVENT_STREAMON received")
-            print("=== Stream ON requested by host ===")
+            handle_streaming(fd, stream_on=True)
         elif event.type == UVC_EVENT_STREAMOFF:
-            print("\n-> UVC_EVENT_STREAMOFF received")
-            print("=== Stream OFF requested by host ===")
+            handle_streaming(fd, stream_on=False)
         else:
-            print(f"-> Unknown event type: 0x{event.type:08x}")
-            
+            print(f"Unhandled event type: {event.type}")
     except Exception as e:
-        if hasattr(e, 'errno'):
-            if e.errno == 11:  # EAGAIN
-                print(".", end="", flush=True)
-            else:
-                print(f"\nError handling event (errno={e.errno}): {e}")
-        else:
-            print(f"\nUnexpected error: {e}")
+        print(f"Error dequeuing event: {e}")
 
 def main():
     try:
