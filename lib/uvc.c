@@ -446,17 +446,17 @@ void uvc_events_init(struct uvc_device *dev, struct events *events)
 	
 	memset(&sub, 0, sizeof sub);
 	sub.type = UVC_EVENT_SETUP;
-	//ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	/*sub.type = UVC_EVENT_DATA;
+	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub); //This line causes the camera to connect
+	sub.type = UVC_EVENT_DATA;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
 	sub.type = UVC_EVENT_STREAMON;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
 	sub.type = UVC_EVENT_STREAMOFF;
 	ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
-	*/
+	
 
-	//events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION,
-	//		uvc_events_process, dev);
+	events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION,
+			uvc_events_process, dev);
 }
 
 void uvc_set_config(struct uvc_device *dev, struct uvc_function_config *fc)
