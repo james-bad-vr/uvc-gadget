@@ -282,54 +282,56 @@ def handle_data_event(event):
     state.current_control = None
 
 def handle_event(fd):
-    """Handle all UVC events"""
     event = v4l2_event()
     try:
         fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
         
-        print(f"\nEvent received: type=0x{event.type:08x}")
+        print(f"\nEvent received:")
+        print(f"  Type: 0x{event.type:08x}")
+        print(f"  Sequence: {event.sequence}")
+        print(f"  Pending: {event.pending}")
         
-        if event.type == UVC_EVENT_CONNECT:
-            print("Connect event received")
-            state.connected = True
-            init_streaming_control(state.probe_control)
-            init_streaming_control(state.commit_control)
-            if not state.format_set:
-                set_video_format(fd)
-                
-        elif event.type == UVC_EVENT_DISCONNECT:
-            print("Disconnect event received")
-            state.connected = False
-            state.streaming = False
-            
-        elif event.type == UVC_EVENT_SETUP:
+        # Create empty response by default for every event
+        response = uvc_request_data()
+        memset(addressof(response), 0, sizeof(response))
+        response.length = -1  # Equivalent to -EL2HLT in C
+        
+        if event.type == UVC_EVENT_SETUP:
             handle_setup_event(fd, event)
-            
         elif event.type == UVC_EVENT_DATA:
             handle_data_event(event)
-            
         elif event.type == UVC_EVENT_STREAMON:
             print("Stream ON event received")
-            try:
-                buf_type = c_uint32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-                fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-                state.streaming = True
-                print("Streaming started")
-            except Exception as e:
-                print(f"Failed to start streaming: {e}")
-                
         elif event.type == UVC_EVENT_STREAMOFF:
             print("Stream OFF event received")
-            try:
-                buf_type = c_uint32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-                fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
-                state.streaming = False
-                print("Streaming stopped")
-            except Exception as e:
-                print(f"Failed to stop streaming: {e}")
-    
+        elif event.type == UVC_EVENT_CONNECT:
+            print("Connect event received")
+            init_streaming_control(probe_control)
+            init_streaming_control(commit_control)
+        elif event.type == UVC_EVENT_DISCONNECT:
+            print("Disconnect event received")
+        elif event.type == 0:
+            print("Warning: Received event with type 0")
+            print("Event memory:")
+            event_bytes = bytes(event)[:128]
+            for i in range(0, len(event_bytes), 16):
+                print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
+        
+        # Always try to send a response, even if empty
+        try:
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+            print("  -> Empty response sent")
+        except Exception as e:
+            print(f"  -> Failed to send empty response: {e}")
+            
     except Exception as e:
         print(f"Error handling event: {e}")
+        print(f"Error details: {e!r}")
+        print(f"Event structure size: {sizeof(event)}")
+        print("Event memory:")
+        event_bytes = bytes(event)[:128]
+        for i in range(0, len(event_bytes), 16):
+            print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
 
 def subscribe_events(fd):
     """Subscribe to all UVC events"""
