@@ -146,7 +146,7 @@ class v4l2_format(Structure):
     ]
 
 # Global state
-class DeviceState:But
+class DeviceState:
     def __init__(self):
         self.probe_control = uvc_streaming_control()
         self.commit_control = uvc_streaming_control()
