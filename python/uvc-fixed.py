@@ -23,20 +23,11 @@ UVC_EVENT_STREAMON = 0x08000002
 UVC_EVENT_STREAMOFF = 0x08000003
 UVC_EVENT_SETUP = 0x08000004
 UVC_EVENT_DATA = 0x08000005
-UVC_EVENT_CONTROL = 0x08000006
 
 class timeval(Structure):
     _fields_ = [
         ('tv_sec', c_long),
         ('tv_usec', c_long)
-    ]
-
-class v4l2_event_subscription(Structure):
-    _fields_ = [
-        ('type', c_uint32),
-        ('id', c_uint32),
-        ('flags', c_uint32),
-        ('reserved', c_uint32 * 5)
     ]
 
 class v4l2_event(Structure):
@@ -82,14 +73,19 @@ def handle_setup_event(fd, data):
     response_data = None
     if bmRequestType == 0xA1:  # Class-specific GET request
         if bRequest == 0x86:   # GET_INFO
+            print("  -> GET_INFO request")
             response_data = struct.pack('<B', 0x03)  # GET/SET supported
         elif bRequest == 0x87:  # GET_DEF
+            print("  -> GET_DEF request")
             response_data = struct.pack('<H', 0x007F)
         elif bRequest == 0x82:  # GET_MIN
+            print("  -> GET_MIN request")
             response_data = struct.pack('<H', 0x0000)
         elif bRequest == 0x83:  # GET_MAX
+            print("  -> GET_MAX request")
             response_data = struct.pack('<H', 0x00FF)
         elif bRequest == 0x84:  # GET_RES
+            print("  -> GET_RES request")
             response_data = struct.pack('<H', 0x0001)
 
     if response_data:
@@ -99,11 +95,12 @@ def handle_setup_event(fd, data):
             print(f"  -> Response sent: {' '.join(f'{b:02x}' for b in padded_response[:len(response_data)])}")
         except Exception as e:
             print(f"  -> Failed to send response: {e}")
+            print(f"  -> Response data length: {len(padded_response)}")
+            print(f"  -> Full response hex: {' '.join(f'{b:02x}' for b in padded_response)}")
 
 def handle_event(fd):
     event = v4l2_event()
     try:
-        # Get a pointer to the event structure
         event_p = ctypes.pointer(event)
         fcntl.ioctl(fd, VIDIOC_DQEVENT, event_p)
         
@@ -112,12 +109,10 @@ def handle_event(fd):
         print(f"  Sequence: {event.sequence}")
         print(f"  Pending: {event.pending}")
         
-        # Print raw event data for debugging
-        event_bytes = bytes(event)
-        print("Raw event data:")
-        for i in range(0, min(len(event_bytes), 64), 16):
-            hex_data = ' '.join(f'{b:02x}' for b in event_bytes[i:i+16])
-            print(f"  {hex_data}")
+        # Print first 16 bytes of event data
+        print("  Event data (first 16 bytes):", end=" ")
+        event_data = bytes(event.u.data)[:16]
+        print(' '.join(f'{b:02x}' for b in event_data))
         
         if event.type == UVC_EVENT_SETUP:
             handle_setup_event(fd, bytes(event.u.data[0:8]))
@@ -136,8 +131,14 @@ def handle_event(fd):
             
     except Exception as e:
         print(f"Error handling event: {e}")
+        print(f"Error details: {e!r}")
         print(f"Event structure size: {sizeof(event)}")
-        print(f"Event address: {addressof(event):x}")
+        # Print raw memory of the event structure to debug
+        event_bytes = bytes(event)
+        print("Raw event memory:")
+        for i in range(0, sizeof(event), 16):
+            hex_data = ' '.join(f'{b:02x}' for b in event_bytes[i:i+16])
+            print(f"  {hex_data}")
 
 def main():
     try:
@@ -145,15 +146,14 @@ def main():
         print(f"Opening {device_path}")
         fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
         
-        # Subscribe to all possible events
+        # Subscribe to all valid events
         event_types = [
-            UVC_EVENT_CONNECT,
-            UVC_EVENT_DISCONNECT,
-            UVC_EVENT_STREAMON,
-            UVC_EVENT_STREAMOFF,
-            UVC_EVENT_SETUP,
-            UVC_EVENT_DATA,
-            UVC_EVENT_CONTROL
+            UVC_EVENT_SETUP,     # 0x08000004 - Most important for handling control requests
+            UVC_EVENT_DATA,      # 0x08000005 - For data stage of control requests
+            UVC_EVENT_STREAMON,  # 0x08000002 - Stream control
+            UVC_EVENT_STREAMOFF, # 0x08000003 - Stream control
+            UVC_EVENT_CONNECT,   # 0x08000000 - Device connection
+            UVC_EVENT_DISCONNECT # 0x08000001 - Device disconnection
         ]
         
         for event_type in event_types:
@@ -164,7 +164,6 @@ def main():
         print(f"v4l2_event: {sizeof(v4l2_event)}")
         print(f"timeval: {sizeof(timeval)}")
         
-        # Use select.POLLPRI | select.POLLERR | select.POLLHUP for exception-style polling
         poll = select.poll()
         poll.register(fd, select.POLLPRI | select.POLLERR | select.POLLHUP)
         
@@ -174,7 +173,6 @@ def main():
                 for fd, event_mask in events:
                     print(f"\nPoll event received - mask: 0x{event_mask:04x}")
                     handle_event(fd)
-            time.sleep(0.01)
 
     except KeyboardInterrupt:
         print("\nExiting...")
