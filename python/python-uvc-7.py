@@ -307,4 +307,109 @@ def handle_event(fd):
                 fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
                 print("Streaming started successfully")
             except Exception as e:
-                print(f"Failed to start streaming:
+                print(f"Failed to start streaming: {e}")
+        elif event.type == UVC_EVENT_STREAMOFF:
+            print("Stream OFF event received")
+            try:
+                buf_type = c_uint32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+                fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
+                print("Streaming stopped successfully")
+            except Exception as e:
+                print(f"Failed to stop streaming: {e}")
+        elif event.type == UVC_EVENT_CONNECT:
+            print("Connect event received")
+            # Initialize control structures
+            init_streaming_control(probe_control)
+            init_streaming_control(commit_control)
+        elif event.type == UVC_EVENT_DISCONNECT:
+            print("Disconnect event received")
+        elif event.type == 0:
+            print("Warning: Received event with type 0")
+            print("Event memory:")
+            event_bytes = bytes(event)[:128]
+            for i in range(0, len(event_bytes), 16):
+                print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
+            
+    except Exception as e:
+        print(f"Error handling event: {e}")
+        print(f"Error details: {e!r}")
+        print(f"Event structure size: {sizeof(event)}")
+        print("Event memory:")
+        event_bytes = bytes(event)[:128]
+        for i in range(0, len(event_bytes), 16):
+            print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
+
+def subscribe_event(fd, event_type):
+    sub = v4l2_event_subscription()
+    # Zero out the entire structure
+    memset(addressof(sub), 0, sizeof(sub))
+    sub.type = event_type
+    
+    try:
+        fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, sub)
+        print(f"Subscribed to event 0x{event_type:08x}")
+        # Debug output
+        sub_bytes = bytes(sub)
+        print(f"Subscription data: {' '.join(f'{b:02x}' for b in sub_bytes[:16])}")
+    except Exception as e:
+        print(f"Failed to subscribe to event 0x{event_type:08x}: {e}")
+        raise
+
+def main():
+    try:
+        device_path = "/dev/video0"
+        print(f"Opening {device_path}")
+        fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
+        
+        # Subscribe to all valid events
+        event_types = [
+            UVC_EVENT_SETUP,
+            UVC_EVENT_DATA,
+            UVC_EVENT_STREAMON,
+            UVC_EVENT_STREAMOFF,
+            UVC_EVENT_CONNECT,
+            UVC_EVENT_DISCONNECT
+        ]
+        
+        for event_type in event_types:
+            subscribe_event(fd, event_type)
+
+        # Set initial video format
+        set_video_format(fd, 640, 360)
+
+        print("\nDevice ready - waiting for events...")
+        print(f"Structure sizes:")
+        print(f"  v4l2_event: {sizeof(v4l2_event)}")
+        print(f"  uvc_event: {sizeof(uvc_event)}")
+        print(f"  uvc_request_data: {sizeof(uvc_request_data)}")
+        print(f"  usb_ctrlrequest: {sizeof(usb_ctrlrequest)}")
+        print(f"  uvc_streaming_control: {sizeof(uvc_streaming_control)}")
+        
+        poll = select.poll()
+        # Use POLLPRI for exception-style events only
+        poll.register(fd, select.POLLPRI)
+        
+        while True:
+            events = poll.poll(1000)  # 1 second timeout
+            if events:
+                for fd, event_mask in events:
+                    print(f"\nPoll event received - mask: 0x{event_mask:04x}")
+                    handle_event(fd)
+            else:
+                # Optional: print a dot to show we're still running
+                print(".", end="", flush=True)
+
+            time.sleep(0.01)  # Small sleep to prevent busy-waiting
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    except Exception as e:
+        print(f"Error: {e}")
+        print(f"Error details: {e!r}")
+    finally:
+        if 'fd' in locals():
+            os.close(fd)
+            print("Device closed")
+
+if __name__ == "__main__":
+    main()
