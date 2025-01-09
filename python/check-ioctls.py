@@ -32,4 +32,5 @@ def get_ioctl_value(name):
 
 print("Checking system IOCTL values...")
 print(f"VIDIOC_DQEVENT = {get_ioctl_value('VIDIOC_DQEVENT')}")
+print(f"VIDIOC_S_FMT = {get_ioctl_value('VIDIOC_S_FMT')}")
 print(f"VIDIOC_SUBSCRIBE_EVENT = {get_ioctl_value('VIDIOC_SUBSCRIBE_EVENT')}")
