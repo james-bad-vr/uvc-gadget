@@ -52,18 +52,6 @@ V4L2_PIX_FMT_YUYV = 0x56595559
 V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
 V4L2_FIELD_NONE = 1
 
-# Global state
-class DeviceState:
-    def __init__(self):
-        self.probe_control = uvc_streaming_control()
-        self.commit_control = uvc_streaming_control()
-        self.current_control = None
-        self.streaming = False
-        self.connected = False
-        self.format_set = False
-
-state = DeviceState()
-
 class usb_ctrlrequest(Structure):
     _fields_ = [
         ('bRequestType', c_uint8),
@@ -156,6 +144,18 @@ class v4l2_format(Structure):
         ('type', c_uint32),
         ('u', _u)
     ]
+
+# Global state
+class DeviceState:But
+    def __init__(self):
+        self.probe_control = uvc_streaming_control()
+        self.commit_control = uvc_streaming_control()
+        self.current_control = None
+        self.streaming = False
+        self.connected = False
+        self.format_set = False
+
+state = DeviceState()
 
 def init_streaming_control(ctrl):
     """Initialize streaming control with default values"""
