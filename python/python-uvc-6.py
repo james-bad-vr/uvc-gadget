@@ -7,7 +7,7 @@ import select
 from ctypes import (
     Structure, Union, c_uint32, c_uint8, c_long, c_int32, c_uint16,
     sizeof, addressof, pointer, cast, POINTER, create_string_buffer,
-    memmove
+    memmove, memset
 )
 
 # IOCTL codes
