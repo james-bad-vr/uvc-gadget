@@ -235,7 +235,7 @@ def dump_streaming_control(name, ctrl):
 def subscribe_event(fd, event_type):
     sub = v4l2_event_subscription()
     # Zero out the entire structure
-    ctypes.memset(addressof(sub), 0, sizeof(sub))
+    memset(addressof(sub), 0, sizeof(sub))
     sub.type = event_type
     
     try:
