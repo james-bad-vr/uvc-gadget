@@ -5,6 +5,7 @@ import os
 import time
 import select
 import ctypes
+from ctypes import Structure, c_uint32, c_uint8, c_long
 
 # V4L2 and UVC constants
 VIDIOC_SUBSCRIBE_EVENT = 0x4020565a
@@ -17,27 +18,41 @@ UVC_EVENT_DATA = 0x08000005
 UVC_EVENT_STREAMON = 0x08000002
 UVC_EVENT_STREAMOFF = 0x08000003
 
-# Define v4l2_event structure
-class v4l2_event(ctypes.Structure):
+# Define proper timeval structure
+class timeval(Structure):
     _fields_ = [
-        ('type', ctypes.c_uint32),
-        ('u', ctypes.c_uint8 * 64),  # Union of event data
-        ('pending', ctypes.c_uint32),
-        ('sequence', ctypes.c_uint32),
-        ('timestamp', ctypes.c_uint64),
-        ('id', ctypes.c_uint32),
-        ('reserved', ctypes.c_uint32 * 8)
+        ('tv_sec', c_long),
+        ('tv_usec', c_long)
+    ]
+
+# Define v4l2_event structure with correct memory layout
+class v4l2_event(Structure):
+    _fields_ = [
+        ('type', c_uint32),
+        ('u', c_uint8 * 64),  # Union of event data
+        ('pending', c_uint32),
+        ('sequence', c_uint32),
+        ('timestamp', timeval),  # Changed to use timeval structure
+        ('id', c_uint32),
+        ('reserved', c_uint32 * 8)
     ]
 
 def subscribe_event(fd, event_type):
-    data = struct.pack('IIIi16s', 
-        event_type,  # type
-        0,          # id
-        0,          # flags
-        0,          # reserved[0]
-        b'\0' * 16  # remaining reserved bytes
-    )
-    fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, data)
+    # Using ctypes for subscription structure too
+    class v4l2_event_subscription(Structure):
+        _fields_ = [
+            ('type', c_uint32),
+            ('id', c_uint32),
+            ('flags', c_uint32),
+            ('reserved', c_uint32 * 5)
+        ]
+    
+    sub = v4l2_event_subscription()
+    sub.type = event_type
+    sub.id = 0
+    sub.flags = 0
+    
+    fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, sub)
 
 def send_response(fd, data):
     try:
@@ -60,16 +75,16 @@ def handle_setup_event(fd, event):
             response_data = struct.pack('<B', 0x03)  # Support GET/SET
         elif bRequest == 0x82:  # GET_MIN
             print("-> GET_MIN: Returning minimum value.")
-            response_data = struct.pack('<H', 0x0000)  # Example minimum value
+            response_data = struct.pack('<H', 0x0000)
         elif bRequest == 0x83:  # GET_MAX
             print("-> GET_MAX: Returning maximum value.")
-            response_data = struct.pack('<H', 0x00FF)  # Example maximum value
+            response_data = struct.pack('<H', 0x00FF)
         elif bRequest == 0x84:  # GET_RES
             print("-> GET_RES: Returning resolution step.")
-            response_data = struct.pack('<H', 0x0001)  # Example resolution step
+            response_data = struct.pack('<H', 0x0001)
         elif bRequest == 0x87:  # GET_DEF
             print("-> GET_DEF: Returning default value.")
-            response_data = struct.pack('<H', 0x007F)  # Example default value
+            response_data = struct.pack('<H', 0x007F)
 
     if response_data is not None:
         padded_response = response_data.ljust(124, b'\0')  # Ensure the response fits 124 bytes
@@ -85,11 +100,12 @@ def handle_streaming(fd, stream_on):
         print("Stream OFF: Stopping video stream.")
         # TODO: Release buffers and stop the stream
 
-
 def handle_event(fd):
     event = v4l2_event()
     try:
+        # Pass by reference for ioctl
         fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
+        
         if event.type == UVC_EVENT_SETUP:
             handle_setup_event(fd, event)
         elif event.type == UVC_EVENT_STREAMON:
@@ -97,9 +113,13 @@ def handle_event(fd):
         elif event.type == UVC_EVENT_STREAMOFF:
             handle_streaming(fd, stream_on=False)
         else:
-            print(f"Unhandled event type: {event.type}")
+            print(f"Unhandled event type: 0x{event.type:08x}")
     except Exception as e:
         print(f"Error dequeuing event: {e}")
+        # Debug: Print structure sizes and memory layout
+        print(f"Event structure size: {ctypes.sizeof(event)}")
+        print(f"Event type: 0x{event.type:08x}")
+        print(f"Event memory: {bytes(event)[:32].hex()}")
 
 def main():
     try:
@@ -119,7 +139,7 @@ def main():
                 return
 
         print("\nDevice ready - starting event loop")
-        print("Will print '.' when polling and full details when events arrive")
+        print("Will print event details when they arrive")
         
         poll = select.poll()
         poll.register(fd, select.POLLIN | select.POLLPRI)
@@ -127,9 +147,8 @@ def main():
         while True:
             events = poll.poll(1000)
             if events:
-                print("\nReceived poll event!")
                 for fd, event_mask in events:
-                    print(f"Event mask: 0x{event_mask:04x}")
+                    print(f"\nReceived event with mask: 0x{event_mask:04x}")
                     if event_mask & select.POLLIN:
                         print("POLLIN event")
                     if event_mask & select.POLLPRI:
