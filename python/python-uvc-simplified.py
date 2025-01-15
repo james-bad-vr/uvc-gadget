@@ -177,6 +177,86 @@ class DeviceState:
 
 state = DeviceState()
 
+def main():
+    """Main program loop"""
+    try:
+        device_path = "/dev/video0"
+        print(f"Opening {device_path}")
+        fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
+        
+        # Query device capabilities
+        cap = v4l2_capability()
+        fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
+        
+        # Print the queried capabilities
+        print(f"Driver: {cap.driver.decode('utf-8')}")
+        print(f"Card: {cap.card.decode('utf-8')}")
+        print(f"Bus Info: {cap.bus_info.decode('utf-8')}")
+        print(f"Version: {cap.version}")
+        print(f"Capabilities: 0x{cap.capabilities:08x}")
+        print(f"Device Caps: 0x{cap.device_caps:08x}")
+        print("")
+        
+        # Subscribe to all events
+        if subscribe_events(fd) < 0:
+            print("Failed to subscribe to events")
+            return
+
+        print("\nDevice ready - waiting for events...")
+        print(f"Structure sizes:")
+        print(f"  v4l2_event: {sizeof(v4l2_event)}")
+        print(f"  uvc_event: {sizeof(uvc_event)}")
+        print(f"  uvc_request_data: {sizeof(uvc_request_data)}")
+        print(f"  usb_ctrlrequest: {sizeof(usb_ctrlrequest)}")
+        print(f"  uvc_streaming_control: {sizeof(uvc_streaming_control)}")
+        
+        epoll = select.epoll()
+        epoll.register(fd, select.EPOLLPRI)
+        
+        event = v4l2_event()
+        
+        while True:
+            events = epoll.poll(1)  # 1-second timeout
+            for fd, event_mask in events:
+                try:
+                    fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
+                    
+                    handler = EVENT_HANDLERS.get(event.type)
+                    if handler:
+                        response = handler(event)
+                        if response is not None:
+                            try:
+                                fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+                                print("Response sent successfully")
+                            except Exception as e:
+                                print(f"Failed to send response: {e}")
+                    else:
+                        print(f"Warning: No handler for event type 0x{event.type:08x}")
+                        
+                except Exception as e:
+                    print(f"Error handling event: {e}")
+                    print(f"Error details: {e!r}")
+                    continue
+            
+            if not events:
+                # Print a dot to show we're still running
+                print(".", end="", flush=True)
+            
+            time.sleep(0.01)  # Small sleep to prevent busy-waiting
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    except Exception as e:
+        print(f"Error: {e}")
+        print(f"Details: {e!r}")
+    finally:
+        if 'epoll' in locals():
+            epoll.unregister(fd)
+            epoll.close()
+        if 'fd' in locals():
+            os.close(fd)
+            print("Device closed")
+
 def init_streaming_control(ctrl):
     """Initialize streaming control with default values"""
     ctrl.bmHint = 1
@@ -352,86 +432,6 @@ def subscribe_events(fd):
             print(f"Failed to subscribe to event 0x{event_type:08x}: {e}")
             return -1
     return 0
-
-def main():
-    """Main program loop"""
-    try:
-        device_path = "/dev/video0"
-        print(f"Opening {device_path}")
-        fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
-        
-        # Query device capabilities
-        cap = v4l2_capability()
-        fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
-        
-        # Print the queried capabilities
-        print(f"Driver: {cap.driver.decode('utf-8')}")
-        print(f"Card: {cap.card.decode('utf-8')}")
-        print(f"Bus Info: {cap.bus_info.decode('utf-8')}")
-        print(f"Version: {cap.version}")
-        print(f"Capabilities: 0x{cap.capabilities:08x}")
-        print(f"Device Caps: 0x{cap.device_caps:08x}")
-        print("")
-        
-        # Subscribe to all events
-        if subscribe_events(fd) < 0:
-            print("Failed to subscribe to events")
-            return
-
-        print("\nDevice ready - waiting for events...")
-        print(f"Structure sizes:")
-        print(f"  v4l2_event: {sizeof(v4l2_event)}")
-        print(f"  uvc_event: {sizeof(uvc_event)}")
-        print(f"  uvc_request_data: {sizeof(uvc_request_data)}")
-        print(f"  usb_ctrlrequest: {sizeof(usb_ctrlrequest)}")
-        print(f"  uvc_streaming_control: {sizeof(uvc_streaming_control)}")
-        
-        epoll = select.epoll()
-        epoll.register(fd, select.EPOLLPRI)
-        
-        event = v4l2_event()
-        
-        while True:
-            events = epoll.poll(1)  # 1-second timeout
-            for fd, event_mask in events:
-                try:
-                    fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
-                    
-                    handler = EVENT_HANDLERS.get(event.type)
-                    if handler:
-                        response = handler(event)
-                        if response is not None:
-                            try:
-                                fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-                                print("Response sent successfully")
-                            except Exception as e:
-                                print(f"Failed to send response: {e}")
-                    else:
-                        print(f"Warning: No handler for event type 0x{event.type:08x}")
-                        
-                except Exception as e:
-                    print(f"Error handling event: {e}")
-                    print(f"Error details: {e!r}")
-                    continue
-            
-            if not events:
-                # Print a dot to show we're still running
-                print(".", end="", flush=True)
-            
-            time.sleep(0.01)  # Small sleep to prevent busy-waiting
-
-    except KeyboardInterrupt:
-        print("\nExiting...")
-    except Exception as e:
-        print(f"Error: {e}")
-        print(f"Details: {e!r}")
-    finally:
-        if 'epoll' in locals():
-            epoll.unregister(fd)
-            epoll.close()
-        if 'fd' in locals():
-            os.close(fd)
-            print("Device closed")
 
 if __name__ == "__main__":
     main()
