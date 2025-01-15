@@ -267,7 +267,7 @@ def set_video_format(fd):
         return -1
 
 def handle_request(fd, ctrl, req, response):
-    """Handle a specific UVC request"""
+    print(f"Handling bRequest: 0x{req.bRequest:02x}")
     if req.bRequest == UVC_GET_CUR:
         print("-> GET_CUR request")
         memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
@@ -299,6 +299,8 @@ def handle_request(fd, ctrl, req, response):
         response.data[0] = sizeof(uvc_streaming_control)
         response.data[1] = 0x00
         response.length = 2
+    else:
+        print(f"Unhandled bRequest: 0x{req.bRequest:02x}")
 
 def handle_connect_event(event):
     print("UVC_EVENT_CONNECT")
@@ -326,7 +328,7 @@ def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
     req = event.u.req
     response = uvc_request_data()
-    response.length = -errno.EL2HLT
+    response.length = -errno.EL2HLT  # Default response length (failure)
 
     print(f"Setup Request:")
     print(f"  bmRequestType: 0x{req.bRequestType:02x}")
@@ -335,26 +337,24 @@ def handle_setup_event(event):
     print(f"  wIndex: 0x{req.wIndex:04x}")
     print(f"  wLength: {req.wLength}")
 
-    if req.bRequestType & USB_TYPE_MASK == USB_TYPE_STANDARD:
-        print("  USB standard request")
-    elif req.bRequestType & USB_TYPE_MASK == USB_TYPE_CLASS:
-        print("  USB class request")
-
     cs = (req.wValue >> 8) & 0xFF
     print(f"  Control Selector: 0x{cs:02x}")
 
-    if cs == UVC_VS_PROBE_CONTROL or cs == UVC_VS_COMMIT_CONTROL:
+    if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
         ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
-        
+
         if req.bRequestType == 0xA1:  # GET
+            print("  Handling GET request")
             handle_request(None, ctrl, req, response)
         elif req.bRequestType == 0x21:  # SET
+            print("  Handling SET request")
             if req.bRequest == UVC_SET_CUR:
-                print(f"-> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
+                print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
                 state.current_control = cs
                 response.length = sizeof(uvc_streaming_control)
 
     return response
+
 
 def handle_data_event(event):
     print("\nUVC_EVENT_DATA")
