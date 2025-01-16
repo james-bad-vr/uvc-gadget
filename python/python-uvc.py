@@ -538,16 +538,29 @@ def streaming_thread():
     """Background thread to handle continuous streaming"""
     print("\nStreaming thread started")
     frame_count = 0
+    poll = select.epoll()
+    poll.register(fd, select.EPOLLOUT | select.EPOLLIN)
+    
     while state.streaming:
         try:
+            # Wait for buffer to be available
+            events = poll.poll(100)  # 100ms timeout
+            if not events:
+                continue
+                
             print(f"\nFrame {frame_count}: Processing...")
             # Dequeue a buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
-            print(f"Trying to dequeue buffer...")
-            fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
-            print(f"Dequeued buffer {buf.index}")
+            
+            try:
+                fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
+                print(f"Dequeued buffer {buf.index}")
+            except OSError as e:
+                if e.errno == errno.EAGAIN:
+                    continue
+                raise
             
             # Update the test pattern
             buffer = buffers[buf.index]
@@ -562,26 +575,27 @@ def streaming_thread():
             
             # Queue the buffer back
             buf.bytesused = bytes_used
-            print(f"Queueing buffer {buf.index} back...")
-            fcntl.ioctl(fd, VIDIOC_QBUF, buf)
-            print(f"Buffer {buf.index} queued successfully")
-            
-            frame_count += 1
-            
-        except OSError as e:
-            if e.errno == errno.EAGAIN:  # Resource temporarily unavailable
-                time.sleep(0.001)  # Short sleep before retry
-                continue
-            print(f"Streaming error: {e}")
-            print(f"Error details: {type(e).__name__}")
-            break
+            try:
+                fcntl.ioctl(fd, VIDIOC_QBUF, buf)
+                print(f"Buffer {buf.index} queued successfully")
+                frame_count += 1
+            except OSError as e:
+                if e.errno != errno.EAGAIN:
+                    raise
+                    
         except Exception as e:
             if not state.streaming:  # Expected when stopping
                 print("Streaming stopped normally")
                 break
             print(f"Streaming error: {e}")
             print(f"Error details: {type(e).__name__}")
+            if isinstance(e, OSError):
+                print(f"Error number: {e.errno}")
             break
+            
+    poll.unregister(fd)
+    poll.close()
+    print("Streaming thread ended")
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Fill buffer with a moving test pattern"""
