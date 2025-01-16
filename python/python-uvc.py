@@ -545,6 +545,7 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
+    pattern_index = 0  # Track which pattern we're using
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
@@ -585,7 +586,14 @@ def streaming_thread(fps):
             
             buffer = buffers[buf.index]
             
-            # Queue buffer back immediately - pattern is already in the buffer
+            # Write next pattern
+            buffer['mmap'].seek(0)
+            buffer['mmap'].write(buffer['patterns'][pattern_index])
+            
+            # Move to next pattern
+            pattern_index = (pattern_index + 1) % 8
+            
+            # Queue buffer back
             buf.bytesused = buffer['pattern_size']
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
@@ -608,16 +616,18 @@ def streaming_thread(fps):
     poll.close()
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
-def generate_test_pattern(mm, width, height):
-    """Generate a single test pattern"""
+def generate_test_pattern(mm, width, height, offset=0):
+    """Optimized test pattern generation"""
     pattern = bytearray()
     bytes_per_line = width * 2
     square_size = 64
+    horizontal_offset = offset % width
     
     for y in range(height):
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            is_white = ((y // square_size) + (pixel_x // square_size)) % 2 == 0
+            shifted_x = (pixel_x + horizontal_offset) % width
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
             pattern.extend(color.to_bytes(4, byteorder='little'))
 
@@ -712,6 +722,26 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
+    # Pre-generate 8 patterns with different offsets
+    patterns = []
+    for i in range(8):
+        pattern = bytearray()
+        bytes_per_line = current_format.width * 2
+        square_size = 64
+        offset = (i * current_format.width) // 8  # Divide width into 8 steps
+        
+        for y in range(current_format.height):
+            for x in range(0, bytes_per_line, 4):
+                pixel_x = x // 2
+                shifted_x = (pixel_x + offset) % current_format.width
+                is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+                color = WHITE if is_white else GRAY
+                pattern.extend(color.to_bytes(4, byteorder='little'))
+        
+        patterns.append(bytes(pattern))
+    
+    print(f"Generated {len(patterns)} patterns")
+    
     # Allocate buffer objects
     buffers = []
     for i in range(req.count):
@@ -738,19 +768,17 @@ def init_video_buffers(fd):
             print(f"  Mapped at offset {buf.m.offset}")
             print(f"  Length: {buf.length}")
             
-            # Write the test pattern to the buffer immediately
-            pattern_size = generate_test_pattern(
-                mm,
-                current_format.width,
-                current_format.height
-            )
+            # Write initial pattern
+            mm.seek(0)
+            mm.write(patterns[0])
             
             buffers.append({
                 'index': i,
                 'length': buf.length,
                 'mmap': mm,
                 'start': mm,
-                'pattern_size': pattern_size
+                'pattern_size': len(patterns[0]),
+                'patterns': patterns  # Store all patterns with the buffer
             })
         except Exception as e:
             print(f"Failed to mmap buffer {i}: {e}")
@@ -906,6 +934,7 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
+    pattern_index = 0  # Track which pattern we're using
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
@@ -946,7 +975,14 @@ def streaming_thread(fps):
             
             buffer = buffers[buf.index]
             
-            # Queue buffer back immediately - pattern is already in the buffer
+            # Write next pattern
+            buffer['mmap'].seek(0)
+            buffer['mmap'].write(buffer['patterns'][pattern_index])
+            
+            # Move to next pattern
+            pattern_index = (pattern_index + 1) % 8
+            
+            # Queue buffer back
             buf.bytesused = buffer['pattern_size']
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
