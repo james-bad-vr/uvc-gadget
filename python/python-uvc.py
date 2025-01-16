@@ -14,7 +14,6 @@ from ctypes import (
     c_ulong, c_long, sizeof, addressof, memmove, byref
 )
 import mmap
-import numpy as np
 
 print(f"System endianness: {sys.byteorder}")
 
@@ -546,14 +545,15 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
-    pattern_index = 0
+    interval = 1.0 / fps
+    next_frame_time = time.time()
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
     poll.register(fd, select.EPOLLOUT)
     
-    # Stats tracking
+    # Reduce debug logging - only print stats every second
     last_stats_time = time.time()
     frames_since_stats = 0
     
@@ -568,8 +568,8 @@ def streaming_thread(fps):
                 last_stats_time = current_time
                 frames_since_stats = 0
             
-            # Wait for buffer
-            events = poll.poll(10)  # 10ms timeout
+            # Wait for buffer with shorter timeout
+            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
             if not events:
                 continue
             
@@ -585,17 +585,17 @@ def streaming_thread(fps):
                     continue
                 raise
             
-            # Use pre-generated pattern
+            # Update test pattern with minimal logging
             buffer = buffers[buf.index]
-            pattern = buffer['patterns'][pattern_index]
-            pattern_index = (pattern_index + 1) % len(buffer['patterns'])
-            
-            # Write pattern to buffer
-            buffer['mmap'].seek(0)
-            buffer['mmap'].write(pattern)
+            bytes_used = generate_test_pattern(
+                buffer['mmap'],
+                current_format.width,
+                current_format.height,
+                offset=frame_count
+            )
             
             # Queue buffer back immediately
-            buf.bytesused = len(pattern)
+            buf.bytesused = bytes_used
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
@@ -723,16 +723,6 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
-    # Pre-generate patterns for each buffer
-    patterns = []
-    for i in range(8):  # Generate 8 different patterns
-        pattern = generate_test_pattern_numpy(
-            current_format.width,
-            current_format.height,
-            offset=i * (current_format.width // 8)
-        )
-        patterns.append(pattern)
-    
     # Allocate buffer objects
     buffers = []
     for i in range(req.count):
@@ -758,13 +748,13 @@ def init_video_buffers(fd):
             print(f"Buffer {i}:")
             print(f"  Mapped at offset {buf.m.offset}")
             print(f"  Length: {buf.length}")
+            print(f"  Memory map object: {mm}")
             
             buffers.append({
                 'index': i,
                 'length': buf.length,
                 'mmap': mm,
-                'start': mm,
-                'patterns': patterns  # Store pre-generated patterns
+                'start': mm
             })
         except Exception as e:
             print(f"Failed to mmap buffer {i}: {e}")
@@ -774,32 +764,6 @@ def init_video_buffers(fd):
             return None
     
     return buffers
-
-def generate_test_pattern_numpy(width, height, offset=0):
-    """Generate test pattern using numpy for better performance"""
-    bytes_per_line = width * 2
-    square_size = 64
-    horizontal_offset = offset % width
-    
-    # Create coordinate arrays
-    x = np.arange(width)
-    y = np.arange(height)
-    X, Y = np.meshgrid(x, y)
-    
-    # Apply horizontal offset
-    X = (X + horizontal_offset) % width
-    
-    # Create checkerboard pattern
-    checker = ((Y // square_size) + (X // square_size)) % 2 == 0
-    
-    # Create YUYV pattern
-    pattern = np.zeros((height, bytes_per_line), dtype=np.uint8)
-    pattern[:, 0::4] = np.where(checker, 0xeb, 0x7F)  # Y1
-    pattern[:, 1::4] = np.where(checker, 0x80, 0x7F)  # U
-    pattern[:, 2::4] = np.where(checker, 0xeb, 0x7F)  # Y2
-    pattern[:, 3::4] = np.where(checker, 0x80, 0x7F)  # V
-    
-    return pattern.tobytes()
 
 def queue_initial_buffers(fd, buffers, width, height):
     """Queue initial buffers with test pattern"""
@@ -946,14 +910,15 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
-    pattern_index = 0
+    interval = 1.0 / fps
+    next_frame_time = time.time()
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
     poll.register(fd, select.EPOLLOUT)
     
-    # Stats tracking
+    # Reduce debug logging - only print stats every second
     last_stats_time = time.time()
     frames_since_stats = 0
     
@@ -968,8 +933,8 @@ def streaming_thread(fps):
                 last_stats_time = current_time
                 frames_since_stats = 0
             
-            # Wait for buffer
-            events = poll.poll(10)  # 10ms timeout
+            # Wait for buffer with shorter timeout
+            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
             if not events:
                 continue
             
@@ -985,17 +950,17 @@ def streaming_thread(fps):
                     continue
                 raise
             
-            # Use pre-generated pattern
+            # Update test pattern with minimal logging
             buffer = buffers[buf.index]
-            pattern = buffer['patterns'][pattern_index]
-            pattern_index = (pattern_index + 1) % len(buffer['patterns'])
-            
-            # Write pattern to buffer
-            buffer['mmap'].seek(0)
-            buffer['mmap'].write(pattern)
+            bytes_used = generate_test_pattern(
+                buffer['mmap'],
+                current_format.width,
+                current_format.height,
+                offset=frame_count
+            )
             
             # Queue buffer back immediately
-            buf.bytesused = len(pattern)
+            buf.bytesused = bytes_used
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
