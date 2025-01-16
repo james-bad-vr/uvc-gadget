@@ -639,7 +639,7 @@ def queue_initial_buffers(fd, buffers, width, height):
     """Queue initial buffers with test pattern"""
     for buf in buffers:
         # Fill buffer with test pattern
-        bytes_used = fill_buffer_with_test_pattern(buf['mmap'], width, height)
+        bytes_used = generate_test_pattern(buf['mmap'], width, height)
         
         # Queue the buffer
         v4l2_buf = v4l2_buffer()
@@ -711,7 +711,13 @@ def stream_off(fd):
 def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
     print("Handling STREAMON event")
-    global buffers  # Access the global buffers list
+    global buffers, current_format  # Access the global variables
+    
+    if not current_format:
+        print("Error: No video format set")
+        return False
+        
+    print(f"Current format: {current_format.width}x{current_format.height}")
     
     if stream_on(fd):
         # Queue initial buffers with test pattern
