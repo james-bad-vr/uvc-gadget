@@ -7,9 +7,11 @@ import select
 import errno
 import sys
 from ctypes import (
-    Structure, Union, c_char, c_uint32, c_uint8, c_int32, c_uint16, c_long,
-    sizeof, addressof, pointer, cast, POINTER, create_string_buffer,
-    memmove, memset
+    Structure, Union, POINTER,
+    c_uint8, c_uint16, c_uint32, c_uint64,
+    c_int8, c_int16, c_int32, c_int64,
+    c_char, c_char_p, c_void_p, c_size_t,
+    c_ulong, c_long, sizeof, addressof, memmove
 )
 import mmap
 
