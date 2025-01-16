@@ -294,9 +294,11 @@ def parse_uvc_function():
     if guid_bytes:
         video_format.guid = format_guid(guid_bytes)
 
-    # Find frame descriptors
+    # Find frame descriptors - only match directories with format "NNNxNNN"
     frame_pattern = os.path.join(streaming_class_path, "*x*")
-    frame_dirs = glob.glob(frame_pattern)
+    frame_dirs = [d for d in glob.glob(frame_pattern) 
+                 if os.path.isdir(d) and 'x' in os.path.basename(d) 
+                 and all(c.isdigit() for c in os.path.basename(d).replace('x', ''))]
     
     for frame_dir in frame_dirs:
         frame = VideoFrame()
@@ -309,8 +311,9 @@ def parse_uvc_function():
         if intervals_str:
             frame.intervals = [int(i) for i in intervals_str.split()]
 
-        video_format.frames.append(frame)
-        print(f"Added frame: {frame.width}x{frame.height} with {len(frame.intervals)} intervals")
+        if frame.width > 0 and frame.height > 0:  # Only add valid frames
+            video_format.frames.append(frame)
+            print(f"Added frame: {frame.width}x{frame.height} with {len(frame.intervals)} intervals")
 
     config.formats.append(video_format)
     return config
@@ -352,13 +355,13 @@ def main():
         print(f"Opening {device_path}")
         fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
         
-        # Query device capabilities
-        cap = v4l2_capability()
-        fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
-        print(f"Capabilities: 0x{cap.capabilities:08x}")
+        # Get device capabilities
+        caps = v4l2_capability()
+        fcntl.ioctl(fd, VIDIOC_QUERYCAP, caps)
+        print(f"Capabilities: 0x{caps.capabilities:08x}")
 
         # Set video format
-        if set_video_format(fd) < 0:
+        if not set_video_format(fd):
             print("Failed to set video format")
             return
         
@@ -614,6 +617,34 @@ def subscribe_events(fd):
             print(f"Failed to subscribe to event 0x{event_type:08x}: {e}")
             return -1
     return 0
+
+def set_video_format(fd):
+    """Set the video format on the device"""
+    format = v4l2_format()
+    format.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+    
+    try:
+        fcntl.ioctl(fd, VIDIOC_G_FMT, format)
+    except Exception as e:
+        print(f"Failed to get format: {e}")
+        return False
+
+    # Set format parameters
+    format.fmt.pix.width = 640  # Default to lowest resolution
+    format.fmt.pix.height = 360
+    format.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
+    format.fmt.pix.field = V4L2_FIELD_NONE
+    format.fmt.pix.bytesperline = format.fmt.pix.width * 2  # YUYV uses 2 bytes per pixel
+    format.fmt.pix.sizeimage = format.fmt.pix.bytesperline * format.fmt.pix.height
+    format.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
+
+    try:
+        fcntl.ioctl(fd, VIDIOC_S_FMT, format)
+        print("Video format set successfully")
+        return True
+    except Exception as e:
+        print(f"Failed to set format: {e}")
+        return False
 
 if __name__ == "__main__":
     main()
