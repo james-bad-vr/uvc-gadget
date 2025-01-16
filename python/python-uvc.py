@@ -260,67 +260,59 @@ def parse_uvc_function():
     # Find ConfigFS mount point
     configfs_mount = find_configfs_mount()
     if not configfs_mount:
-        print("Error: ConfigFS not mounted")
         return None
 
     # Find UVC function directory
-    uvc_pattern = os.path.join(configfs_mount, "usb_gadget/*/functions/uvc.*")
-    uvc_paths = glob.glob(uvc_pattern)
-    if not uvc_paths:
-        print("Error: No UVC function found in ConfigFS")
+    uvc_func_pattern = os.path.join(configfs_mount, "usb_gadget/*/functions/uvc.*")
+    uvc_funcs = glob.glob(uvc_func_pattern)
+    if not uvc_funcs:
         return None
-
-    uvc_path = uvc_paths[0]
-    print(f"configfs_find_uvc_function: Found function path='{uvc_path}'")
+    
+    uvc_func_path = uvc_funcs[0]
+    print(f"configfs_find_uvc_function: Found function path='{uvc_func_path}'")
 
     config = UVCConfig()
 
     # Read streaming parameters
-    config.streaming_interval = int(read_attribute(uvc_path, "streaming_interval") or "1")
-    config.streaming_maxburst = int(read_attribute(uvc_path, "streaming_maxburst") or "0")
-    config.streaming_maxpacket = int(read_attribute(uvc_path, "streaming_maxpacket") or "2048")
+    config.streaming_interval = int(read_attribute(uvc_func_path, "streaming_interval") or "1")
+    config.streaming_maxburst = int(read_attribute(uvc_func_path, "streaming_maxburst") or "0")
+    config.streaming_maxpacket = int(read_attribute(uvc_func_path, "streaming_maxpacket") or "2048")
 
-    # Read control interface number
-    control_path = os.path.join(uvc_path, "control")
-    if os.path.exists(control_path):
-        config.control_interface = int(read_attribute(control_path, "bInterfaceNumber") or "0")
-
-    # Read streaming interface number
-    streaming_path = os.path.join(uvc_path, "streaming")
-    if os.path.exists(streaming_path):
-        config.streaming_interface = int(read_attribute(streaming_path, "bInterfaceNumber") or "1")
+    # Read interface numbers
+    config.control_interface = int(read_attribute(os.path.join(uvc_func_path, "control"), "bInterfaceNumber") or "0")
+    config.streaming_interface = int(read_attribute(os.path.join(uvc_func_path, "streaming"), "bInterfaceNumber") or "1")
 
     # Parse streaming formats
-    streaming_class_path = os.path.join(streaming_path, "class/hs/h/u")
-    if os.path.exists(streaming_class_path):
-        format_index = int(read_attribute(streaming_class_path, "bFormatIndex") or "1")
-        guid_bytes = read_attribute(streaming_class_path, "guidFormat", binary=True)
-        if guid_bytes:
-            video_format.guid = format_guid(guid_bytes)
-        
-        video_format = VideoFormat()
-        video_format.index = format_index
+    streaming_class_path = os.path.join(uvc_func_path, "streaming/class/hs/h/u")
+    
+    # Create format object first
+    video_format = VideoFormat()
+    video_format.index = int(read_attribute(streaming_class_path, "bFormatIndex") or "1")
+    
+    # Read GUID
+    guid_bytes = read_attribute(streaming_class_path, "guidFormat", binary=True)
+    if guid_bytes:
+        video_format.guid = format_guid(guid_bytes)
 
-        # Parse frames
-        for frame_dir in glob.glob(os.path.join(streaming_class_path, "*x*")):
-            if not os.path.isdir(frame_dir):
-                continue
+    # Find frame descriptors
+    frame_pattern = os.path.join(streaming_class_path, "*x*")
+    frame_dirs = glob.glob(frame_pattern)
+    
+    for frame_dir in frame_dirs:
+        frame = VideoFrame()
+        frame.index = int(read_attribute(frame_dir, "bFrameIndex") or "0")
+        frame.width = int(read_attribute(frame_dir, "wWidth") or "0")
+        frame.height = int(read_attribute(frame_dir, "wHeight") or "0")
 
-            frame = VideoFrame()
-            frame.index = int(read_attribute(frame_dir, "bFrameIndex") or "0")
-            frame.width = int(read_attribute(frame_dir, "wWidth") or "0")
-            frame.height = int(read_attribute(frame_dir, "wHeight") or "0")
+        # Parse frame intervals
+        intervals_str = read_attribute(frame_dir, "dwFrameInterval")
+        if intervals_str:
+            frame.intervals = [int(i) for i in intervals_str.split()]
 
-            # Parse frame intervals
-            intervals_str = read_attribute(frame_dir, "dwFrameInterval")
-            if intervals_str:
-                frame.intervals = [int(i) for i in intervals_str.split()]
+        video_format.frames.append(frame)
+        print(f"Added frame: {frame.width}x{frame.height} with {len(frame.intervals)} intervals")
 
-            video_format.frames.append(frame)
-            print(f"Added frame: {frame.width}x{frame.height} with {len(frame.intervals)} intervals")
-
-        config.formats.append(video_format)
-
+    config.formats.append(video_format)
     return config
 
 def init_uvc_device():
@@ -348,6 +340,7 @@ def init_uvc_device():
 
 def main():
     """Main program loop"""
+    fd = None
     try:
         # Initialize UVC configuration
         config = init_uvc_device()
@@ -402,11 +395,12 @@ def main():
             
             time.sleep(0.01)  # Prevent busy-waiting
 
-    except KeyboardInterrupt:
-        print("\nExiting...")
+    except Exception as e:
+        print(f"Error: {e}")
     finally:
-        os.close(fd)
-        print("Device closed")
+        if fd is not None:
+            print("Device closed")
+            os.close(fd)
 
 def init_streaming_control(ctrl):
     """Initialize streaming control with values from config"""
