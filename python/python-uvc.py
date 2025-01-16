@@ -545,15 +545,13 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
-    interval = 1.0 / fps
-    next_frame_time = time.time()
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
     poll.register(fd, select.EPOLLOUT)
     
-    # Reduce debug logging - only print stats every second
+    # Stats tracking
     last_stats_time = time.time()
     frames_since_stats = 0
     
@@ -568,8 +566,8 @@ def streaming_thread(fps):
                 last_stats_time = current_time
                 frames_since_stats = 0
             
-            # Wait for buffer with shorter timeout
-            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
+            # Wait for buffer
+            events = poll.poll(10)  # 10ms timeout
             if not events:
                 continue
             
@@ -585,17 +583,10 @@ def streaming_thread(fps):
                     continue
                 raise
             
-            # Update test pattern with minimal logging
             buffer = buffers[buf.index]
-            bytes_used = generate_test_pattern(
-                buffer['mmap'],
-                current_format.width,
-                current_format.height,
-                offset=frame_count
-            )
             
-            # Queue buffer back immediately
-            buf.bytesused = bytes_used
+            # Queue buffer back immediately - pattern is already in the buffer
+            buf.bytesused = buffer['pattern_size']
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
@@ -617,24 +608,20 @@ def streaming_thread(fps):
     poll.close()
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
-def generate_test_pattern(mm, width, height, offset=0):
-    """Optimized test pattern generation"""
+def generate_test_pattern(width, height):
+    """Generate a single test pattern"""
     pattern = bytearray()
     bytes_per_line = width * 2
     square_size = 64
-    horizontal_offset = offset % width
     
     for y in range(height):
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            shifted_x = (pixel_x + horizontal_offset) % width
-            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+            is_white = ((y // square_size) + (pixel_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
             pattern.extend(color.to_bytes(4, byteorder='little'))
 
-    mm.seek(0)
-    mm.write(bytes(pattern))
-    return len(pattern)
+    return pattern
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
@@ -723,6 +710,13 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
+    # Generate a single test pattern
+    test_pattern = generate_test_pattern(
+        current_format.width,
+        current_format.height
+    )
+    print(f"Generated test pattern of {len(test_pattern)} bytes")
+    
     # Allocate buffer objects
     buffers = []
     for i in range(req.count):
@@ -748,13 +742,17 @@ def init_video_buffers(fd):
             print(f"Buffer {i}:")
             print(f"  Mapped at offset {buf.m.offset}")
             print(f"  Length: {buf.length}")
-            print(f"  Memory map object: {mm}")
+            
+            # Write the test pattern to the buffer immediately
+            mm.seek(0)
+            mm.write(test_pattern)
             
             buffers.append({
                 'index': i,
                 'length': buf.length,
                 'mmap': mm,
-                'start': mm
+                'start': mm,
+                'pattern_size': len(test_pattern)
             })
         except Exception as e:
             print(f"Failed to mmap buffer {i}: {e}")
@@ -910,15 +908,13 @@ def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
-    interval = 1.0 / fps
-    next_frame_time = time.time()
     start_time = time.time()
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
     poll.register(fd, select.EPOLLOUT)
     
-    # Reduce debug logging - only print stats every second
+    # Stats tracking
     last_stats_time = time.time()
     frames_since_stats = 0
     
@@ -933,8 +929,8 @@ def streaming_thread(fps):
                 last_stats_time = current_time
                 frames_since_stats = 0
             
-            # Wait for buffer with shorter timeout
-            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
+            # Wait for buffer
+            events = poll.poll(10)  # 10ms timeout
             if not events:
                 continue
             
@@ -950,17 +946,10 @@ def streaming_thread(fps):
                     continue
                 raise
             
-            # Update test pattern with minimal logging
             buffer = buffers[buf.index]
-            bytes_used = generate_test_pattern(
-                buffer['mmap'],
-                current_format.width,
-                current_format.height,
-                offset=frame_count
-            )
             
-            # Queue buffer back immediately
-            buf.bytesused = bytes_used
+            # Queue buffer back immediately - pattern is already in the buffer
+            buf.bytesused = buffer['pattern_size']
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
