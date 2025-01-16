@@ -546,6 +546,7 @@ def streaming_thread(fps):
     print("\nStreaming thread started")
     frame_count = 0
     start_time = time.time()
+    offset = 0  # Add offset counter
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
@@ -585,8 +586,19 @@ def streaming_thread(fps):
             
             buffer = buffers[buf.index]
             
-            # Queue buffer back immediately - pattern is already in the buffer
-            buf.bytesused = buffer['pattern_size']
+            # Generate new pattern with current offset
+            pattern_size = generate_test_pattern(
+                buffer['mmap'],
+                current_format.width,
+                current_format.height,
+                offset
+            )
+            
+            # Increment offset for next frame
+            offset = (offset + 2) % current_format.width  # Adjust step size (2) for different speeds
+            
+            # Queue buffer back
+            buf.bytesused = pattern_size
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
@@ -608,16 +620,18 @@ def streaming_thread(fps):
     poll.close()
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
-def generate_test_pattern(mm, width, height):
-    """Generate a single test pattern"""
+def generate_test_pattern(mm, width, height, offset=0):
+    """Generate a test pattern with horizontal offset"""
     pattern = bytearray()
     bytes_per_line = width * 2
     square_size = 64
+    horizontal_offset = offset % width  # Wrap around when offset exceeds width
     
     for y in range(height):
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            is_white = ((y // square_size) + (pixel_x // square_size)) % 2 == 0
+            shifted_x = (pixel_x + horizontal_offset) % width  # Apply offset with wrapping
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
             pattern.extend(color.to_bytes(4, byteorder='little'))
 
@@ -907,6 +921,7 @@ def streaming_thread(fps):
     print("\nStreaming thread started")
     frame_count = 0
     start_time = time.time()
+    offset = 0  # Add offset counter
     
     # Create a poll object for monitoring buffer availability
     poll = select.epoll()
@@ -946,8 +961,19 @@ def streaming_thread(fps):
             
             buffer = buffers[buf.index]
             
-            # Queue buffer back immediately - pattern is already in the buffer
-            buf.bytesused = buffer['pattern_size']
+            # Generate new pattern with current offset
+            pattern_size = generate_test_pattern(
+                buffer['mmap'],
+                current_format.width,
+                current_format.height,
+                offset
+            )
+            
+            # Increment offset for next frame
+            offset = (offset + 2) % current_format.width  # Adjust step size (2) for different speeds
+            
+            # Queue buffer back
+            buf.bytesused = pattern_size
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
@@ -970,16 +996,16 @@ def streaming_thread(fps):
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
-    """Optimized test pattern generation"""
+    """Generate a test pattern with horizontal offset"""
     pattern = bytearray()
     bytes_per_line = width * 2
     square_size = 64
-    horizontal_offset = offset % width
+    horizontal_offset = offset % width  # Wrap around when offset exceeds width
     
     for y in range(height):
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            shifted_x = (pixel_x + horizontal_offset) % width
+            shifted_x = (pixel_x + horizontal_offset) % width  # Apply offset with wrapping
             is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
             pattern.extend(color.to_bytes(4, byteorder='little'))
