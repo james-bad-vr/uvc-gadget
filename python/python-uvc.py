@@ -6,6 +6,7 @@ import time
 import select
 import errno
 import sys
+import glob
 from ctypes import (
     Structure, Union, c_char, c_uint32, c_uint8, c_int32, c_uint16, c_long,
     sizeof, addressof, pointer, cast, POINTER, create_string_buffer,
@@ -60,6 +61,11 @@ USB_TYPE_CLASS = 0x20
 V4L2_PIX_FMT_YUYV = 0x56595559
 V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
 V4L2_FIELD_NONE = 1
+
+# Add these constants
+UVC_CT_GAIN_CONTROL = 0x04
+UVC_CT_GAMMA_CONTROL = 0x09
+UVC_CT_BRIGHTNESS_CONTROL = 0x02
 
 class v4l2_capability(Structure):
     _fields_ = [
@@ -185,9 +191,152 @@ class DeviceState:
 
 state = DeviceState()
 
+class UVCConfig:
+    def __init__(self):
+        self.control_interface = 0
+        self.streaming_interface = 1
+        self.streaming_interval = 1
+        self.streaming_maxburst = 0
+        self.streaming_maxpacket = 2048
+        self.formats = []
+
+class VideoFormat:
+    def __init__(self):
+        self.index = 0
+        self.guid = None
+        self.frames = []
+
+class VideoFrame:
+    def __init__(self):
+        self.index = 0
+        self.width = 0
+        self.height = 0
+        self.intervals = []
+
+def find_configfs_mount():
+    """Find the ConfigFS mount point by reading /proc/mounts"""
+    print("configfs_mount_point: Searching for ConfigFS mount point.")
+    with open('/proc/mounts', 'r') as f:
+        for line in f:
+            fields = line.split()
+            if fields[2] == 'configfs':
+                print(f"configfs_mount_point: Found ConfigFS entry in '/proc/mounts': '{line}'")
+                return fields[1]
+    return None
+
+def read_attribute(path, attr_name):
+    """Read an attribute from a ConfigFS file"""
+    full_path = os.path.join(path, attr_name)
+    try:
+        with open(full_path, 'r') as f:
+            content = f.read().strip()
+            print(f"attribute_read: Successfully read {len(content)} bytes from file '{full_path}'")
+            return content
+    except Exception as e:
+        print(f"Failed to read attribute {attr_name} from {path}: {e}")
+        return None
+
+def parse_uvc_function():
+    """Parse UVC function configuration from ConfigFS"""
+    print("configfs_parse_uvc_function")
+    
+    # Find ConfigFS mount point
+    configfs_mount = find_configfs_mount()
+    if not configfs_mount:
+        print("Error: ConfigFS not mounted")
+        return None
+
+    # Find UVC function directory
+    uvc_pattern = os.path.join(configfs_mount, "usb_gadget/*/functions/uvc.*")
+    uvc_paths = glob.glob(uvc_pattern)
+    if not uvc_paths:
+        print("Error: No UVC function found in ConfigFS")
+        return None
+
+    uvc_path = uvc_paths[0]
+    print(f"configfs_find_uvc_function: Found function path='{uvc_path}'")
+
+    config = UVCConfig()
+
+    # Read streaming parameters
+    config.streaming_interval = int(read_attribute(uvc_path, "streaming_interval") or "1")
+    config.streaming_maxburst = int(read_attribute(uvc_path, "streaming_maxburst") or "0")
+    config.streaming_maxpacket = int(read_attribute(uvc_path, "streaming_maxpacket") or "2048")
+
+    # Read control interface number
+    control_path = os.path.join(uvc_path, "control")
+    if os.path.exists(control_path):
+        config.control_interface = int(read_attribute(control_path, "bInterfaceNumber") or "0")
+
+    # Read streaming interface number
+    streaming_path = os.path.join(uvc_path, "streaming")
+    if os.path.exists(streaming_path):
+        config.streaming_interface = int(read_attribute(streaming_path, "bInterfaceNumber") or "1")
+
+    # Parse streaming formats
+    streaming_class_path = os.path.join(streaming_path, "class/hs/h/u")
+    if os.path.exists(streaming_class_path):
+        format_index = int(read_attribute(streaming_class_path, "bFormatIndex") or "1")
+        guid = read_attribute(streaming_class_path, "guidFormat")
+        
+        video_format = VideoFormat()
+        video_format.index = format_index
+        video_format.guid = guid
+
+        # Parse frames
+        for frame_dir in glob.glob(os.path.join(streaming_class_path, "*x*")):
+            if not os.path.isdir(frame_dir):
+                continue
+
+            frame = VideoFrame()
+            frame.index = int(read_attribute(frame_dir, "bFrameIndex") or "0")
+            frame.width = int(read_attribute(frame_dir, "wWidth") or "0")
+            frame.height = int(read_attribute(frame_dir, "wHeight") or "0")
+
+            # Parse frame intervals
+            intervals_str = read_attribute(frame_dir, "dwFrameInterval")
+            if intervals_str:
+                frame.intervals = [int(i) for i in intervals_str.split()]
+
+            video_format.frames.append(frame)
+            print(f"Added frame: {frame.width}x{frame.height} with {len(frame.intervals)} intervals")
+
+        config.formats.append(video_format)
+
+    return config
+
+def init_uvc_device():
+    """Initialize UVC device configuration"""
+    config = parse_uvc_function()
+    if not config:
+        print("Failed to parse UVC configuration")
+        return False
+
+    print("\nUVC Device Configuration:")
+    print(f"Control Interface: {config.control_interface}")
+    print(f"Streaming Interface: {config.streaming_interface}")
+    print(f"Streaming Interval: {config.streaming_interval}")
+    print(f"Streaming MaxBurst: {config.streaming_maxburst}")
+    print(f"Streaming MaxPacket: {config.streaming_maxpacket}")
+    
+    for fmt in config.formats:
+        print(f"\nFormat {fmt.index}:")
+        print(f"  GUID: {fmt.guid}")
+        for frame in fmt.frames:
+            print(f"  Frame {frame.index}: {frame.width}x{frame.height}")
+            print(f"    Intervals: {frame.intervals}")
+
+    return config
+
 def main():
     """Main program loop"""
     try:
+        # Initialize UVC configuration
+        config = init_uvc_device()
+        if not config:
+            print("Failed to initialize UVC device")
+            return
+
         device_path = "/dev/video0"
         print(f"Opening {device_path}")
         fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
@@ -348,11 +497,9 @@ def handle_streamoff_event(event):
 def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
     print("Raw event data (first 8 bytes):")
-    # Print the first 8 bytes of raw data
     raw_data = bytes(event.u.data.data[:8])
     print(' '.join(f'{b:02x}' for b in raw_data))
     
-    # Create request struct from the first 8 bytes of event data
     req = usb_ctrlrequest.from_buffer_copy(raw_data)
     response = uvc_request_data()
     response.length = -errno.EL2HLT
@@ -364,30 +511,61 @@ def handle_setup_event(event):
     print(f"  wIndex: 0x{req.wIndex:04x}")
     print(f"  wLength: {req.wLength}")
 
-    # Extract control selector from wValue
     cs = (req.wValue >> 8) & 0xFF
+    entity_id = req.wIndex & 0xFF
     print(f"  Control Selector: 0x{cs:02x}")
-    print(f"Checking if cs (0x{cs:02x}) is in [{UVC_VS_PROBE_CONTROL}, {UVC_VS_COMMIT_CONTROL}]")
-    
-    if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
-        print(f"Control selector matched! cs=0x{cs:02x}")
-        ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
-        print(f"Request type: 0x{req.bRequestType:02x}")
+    print(f"  Entity ID: 0x{entity_id:02x}")
 
-        if req.bRequestType & USB_TYPE_MASK == USB_TYPE_CLASS:  # Check if it's a class request
-            if req.bRequestType & 0x80:  # GET
-                print("  Handling GET request")
-                handle_request(None, ctrl, req, response)
-            else:  # SET
-                print("  Handling SET request")
-                if req.bRequest == UVC_SET_CUR:
-                    print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
-                    state.current_control = cs
-                    response.length = sizeof(uvc_streaming_control)
+    # Handle both streaming and camera terminal controls
+    if (cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL] or 
+        cs in [UVC_CT_GAIN_CONTROL, UVC_CT_GAMMA_CONTROL, UVC_CT_BRIGHTNESS_CONTROL]):
+        
+        print(f"Control selector matched! cs=0x{cs:02x}")
+        
+        if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
+            ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
+        else:
+            # For camera terminal controls, create a temporary control structure
+            ctrl = create_string_buffer(4)  # 4 bytes for most camera terminal controls
+            
+        if req.bRequestType & 0x80:  # GET
+            print("  Handling GET request")
+            if req.bRequest == UVC_GET_CUR:
+                print("-> GET_CUR request")
+                if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
+                    memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
+                else:
+                    # For camera terminal controls, return a default value
+                    response.data[0] = 0x00
+                response.length = req.wLength
+            elif req.bRequest == UVC_GET_MIN:
+                print("-> GET_MIN request")
+                response.data[0] = 0x00
+                response.length = req.wLength
+            elif req.bRequest == UVC_GET_MAX:
+                print("-> GET_MAX request")
+                response.data[0] = 0xFF
+                response.length = req.wLength
+            elif req.bRequest == UVC_GET_RES:
+                print("-> GET_RES request")
+                response.data[0] = 0x01
+                response.length = req.wLength
+            elif req.bRequest == UVC_GET_INFO:
+                print("-> GET_INFO request")
+                response.data[0] = 0x03  # Supports GET/SET
+                response.length = 1
+            elif req.bRequest == UVC_GET_DEF:
+                print("-> GET_DEF request")
+                response.data[0] = 0x80
+                response.length = req.wLength
+        elif req.bRequestType == 0x21:  # SET
+            print("  Handling SET request")
+            if req.bRequest == UVC_SET_CUR:
+                print(f"  -> SET_CUR request for control 0x{cs:02x}")
+                state.current_control = cs
+                response.length = sizeof(uvc_streaming_control)
     else:
         print(f"Control selector 0x{cs:02x} did not match expected values")
-        # For debugging, let's print the expected values
-        print(f"Expected values: PROBE=0x{UVC_VS_PROBE_CONTROL:02x}, COMMIT=0x{UVC_VS_COMMIT_CONTROL:02x}")
 
     return response
 
