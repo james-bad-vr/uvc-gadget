@@ -386,6 +386,7 @@ def init_streaming_control(ctrl):
 
 def set_video_format(fd):
     """Set video format to YUYV 1920x1080"""
+    print("\nSetting video format")
     global current_format
     
     fmt = v4l2_format()
@@ -403,7 +404,13 @@ def set_video_format(fd):
     
     try:
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
-        print("Video format set successfully")
+        print("Video format set successfully:")
+        print(f"  Width: {fmt.fmt.pix.width}")
+        print(f"  Height: {fmt.fmt.pix.height}")
+        print(f"  Pixel Format: {hex(fmt.fmt.pix.pixelformat)}")
+        print(f"  Bytes per line: {fmt.fmt.pix.bytesperline}")
+        print(f"  Size image: {fmt.fmt.pix.sizeimage}")
+        print(f"  Colorspace: {fmt.fmt.pix.colorspace}")
         current_format = fmt.fmt.pix  # Store the current format
         return True
     except Exception as e:
@@ -464,7 +471,7 @@ def handle_disconnect_event(event):
 
 def handle_streamon_event(event):
     """Handle stream on event"""
-    print("UVC_EVENT_STREAMON")
+    print("\nUVC_EVENT_STREAMON")
     
     # Start the video stream
     try:
@@ -477,12 +484,29 @@ def handle_streamon_event(event):
             print("Error: No video format set")
             return None
             
-        print(f"Current format: {current_format.width}x{current_format.height}")
+        print(f"Current format:")
+        print(f"  Width: {current_format.width}")
+        print(f"  Height: {current_format.height}")
+        print(f"  Pixel Format: {hex(current_format.pixelformat)}")
+        print(f"  Bytes per line: {current_format.bytesperline}")
+        print(f"  Size image: {current_format.sizeimage}")
+        print(f"  Colorspace: {current_format.colorspace}")
+        
+        if not buffers:
+            print("Error: No buffers initialized")
+            return None
+            
+        print(f"Number of buffers: {len(buffers)}")
         
         # Queue initial buffers
         for buf in buffers:
+            print(f"\nProcessing buffer {buf['index']}:")
+            print(f"  Buffer size: {buf['length']}")
+            print(f"  Memory map info: {buf['mmap']}")
+            
             # Fill buffer with test pattern
             bytes_used = generate_test_pattern(buf['mmap'], current_format.width, current_format.height)
+            print(f"  Bytes used for test pattern: {bytes_used}")
             
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
@@ -490,11 +514,17 @@ def handle_streamon_event(event):
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
             
-            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
-            print(f"Queued buffer {buf['index']}")
+            try:
+                fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+                print(f"  Successfully queued buffer {buf['index']}")
+            except Exception as e:
+                print(f"  Failed to queue buffer: {e}")
             
     except Exception as e:
         print(f"Failed to start stream: {e}")
+        print(f"Error type: {type(e)}")
+        import traceback
+        traceback.print_exc()
     
     return None
 
@@ -569,6 +599,8 @@ def handle_data_event(event):
 
 def init_video_buffers(fd):
     """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
+    print("\nInitializing video buffers")
+    
     # Request buffers
     req = v4l2_requestbuffers()
     req.count = 4
@@ -605,7 +637,10 @@ def init_video_buffers(fd):
                           prot=mmap.PROT_READ | mmap.PROT_WRITE,
                           offset=buf.m.offset)
                           
-            print(f"Buffer {i} mapped at offset {buf.m.offset}, length {buf.length}")
+            print(f"Buffer {i}:")
+            print(f"  Mapped at offset {buf.m.offset}")
+            print(f"  Length: {buf.length}")
+            print(f"  Memory map object: {mm}")
             
             buffers.append({
                 'index': i,
@@ -624,8 +659,13 @@ def init_video_buffers(fd):
 
 def generate_test_pattern(mm, width, height):
     """Fill buffer with a test pattern (simple grayscale gradient)"""
+    print(f"\nGenerating test pattern for {width}x{height}")
+    print(f"Memory map object: {mm}")
+    
     # YUYV format: 2 pixels per 4 bytes (Y1 U Y2 V)
     pattern = bytearray()
+    total_bytes = 0
+    
     for y in range(height):
         for x in range(0, width, 2):
             # Y1: grayscale gradient
@@ -637,9 +677,19 @@ def generate_test_pattern(mm, width, height):
             # V: constant
             v = 128
             pattern.extend([y1, u, y2, v])
+            total_bytes += 4
+
+    print(f"Generated pattern size: {len(pattern)} bytes")
+    print(f"Expected size: {width * height * 2} bytes")  # YUYV is 2 bytes per pixel
     
-    # Write pattern to mmap buffer
-    mm.write(pattern)
+    try:
+        # Write pattern to mmap buffer
+        mm.seek(0)
+        mm.write(pattern)
+        print(f"Successfully wrote pattern to memory map")
+    except Exception as e:
+        print(f"Error writing to memory map: {e}")
+    
     return len(pattern)
 
 def queue_initial_buffers(fd, buffers, width, height):
