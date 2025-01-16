@@ -73,14 +73,21 @@ class v4l2_capability(Structure):
     ]
 
 class usb_ctrlrequest(Structure):
-    _pack_ = 1  # Add this line for proper packing
+    _pack_ = 1
     _fields_ = [
         ('bRequestType', c_uint8),
         ('bRequest', c_uint8),
-        ('wValue', c_uint16.__ctype_le__),  # Force little-endian
-        ('wIndex', c_uint16.__ctype_le__),  # Force little-endian
-        ('wLength', c_uint16.__ctype_le__), # Force little-endian
+        ('wValue', c_uint16),
+        ('wIndex', c_uint16), 
+        ('wLength', c_uint16)
     ]
+
+    def __str__(self):
+        return (f"bRequestType: 0x{self.bRequestType:02x}\n"
+                f"bRequest: 0x{self.bRequest:02x}\n"
+                f"wValue: 0x{self.wValue:04x}\n"
+                f"wIndex: 0x{self.wIndex:04x}\n"
+                f"wLength: {self.wLength}")
 
 class uvc_request_data(Structure):
     _fields_ = [
@@ -327,7 +334,8 @@ def handle_streamoff_event(event):
 
 def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
-    req = event.u.req
+    # Create a raw request struct from the event data
+    req = usb_ctrlrequest.from_buffer_copy(event.u.data)
     response = uvc_request_data()
     response.length = -errno.EL2HLT  # Default response length (failure)
 
