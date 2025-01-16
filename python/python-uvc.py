@@ -495,8 +495,13 @@ def handle_streamon_event(event):
         print(f"  Pixel format: {hex(current_format.pixelformat)}")
         print(f"  Bytes per line: {current_format.bytesperline}")
         print(f"  Size image: {current_format.sizeimage}")
-            
-        # Queue initial buffers
+        
+        # Set frame rate to 30 fps (or desired rate)
+        fps = 30
+        frame_interval = int(1000000000 / fps)  # Convert to nanoseconds
+        print(f"\nSetting frame rate to {fps} fps (interval: {frame_interval}ns)")
+        
+        # Queue initial buffers with timing information
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
             
@@ -512,6 +517,8 @@ def handle_streamon_event(event):
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
+            v4l2_buf.timestamp.tv_sec = 0
+            v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
             
             try:
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
@@ -520,11 +527,11 @@ def handle_streamon_event(event):
                 print(f"  Failed to queue buffer: {e}")
                 print(f"  Error details: {type(e).__name__}")
         
-        # Start streaming thread
+        # Start streaming thread with timing control
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
-        thread = threading.Thread(target=streaming_thread, daemon=True)
+        thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
         thread.start()
         print("Streaming thread started with ID:", thread.ident)
             
@@ -534,21 +541,32 @@ def handle_streamon_event(event):
     
     return None
 
-def streaming_thread():
-    """Background thread to handle continuous streaming"""
+def streaming_thread(fps):
+    """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
     frame_count = 0
+    interval = 1.0 / fps
+    next_frame_time = time.time()
+    
     poll = select.epoll()
     poll.register(fd, select.EPOLLOUT | select.EPOLLIN)
     
     while state.streaming:
         try:
-            # Wait for buffer to be available
-            events = poll.poll(100)  # 100ms timeout
+            current_time = time.time()
+            
+            # Wait for buffer to be available with timeout
+            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
             if not events:
                 continue
-                
+            
+            # Calculate time until next frame
+            sleep_time = next_frame_time - current_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            
             print(f"\nFrame {frame_count}: Processing...")
+            
             # Dequeue a buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
@@ -569,16 +587,21 @@ def streaming_thread():
                 buffer['mmap'], 
                 current_format.width, 
                 current_format.height,
-                offset=frame_count  # Use frame_count directly for more noticeable movement
+                offset=frame_count
             )
             print(f"Generated pattern with {bytes_used} bytes")
             
-            # Queue the buffer back
+            # Set buffer timestamp
+            buf.timestamp.tv_sec = int(current_time)
+            buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             buf.bytesused = bytes_used
+            
+            # Queue the buffer back
             try:
                 fcntl.ioctl(fd, VIDIOC_QBUF, buf)
                 print(f"Buffer {buf.index} queued successfully")
                 frame_count += 1
+                next_frame_time = current_time + interval
             except OSError as e:
                 if e.errno != errno.EAGAIN:
                     raise
@@ -860,8 +883,13 @@ def handle_streamon_event(event):
         print(f"  Pixel format: {hex(current_format.pixelformat)}")
         print(f"  Bytes per line: {current_format.bytesperline}")
         print(f"  Size image: {current_format.sizeimage}")
-            
-        # Queue initial buffers
+        
+        # Set frame rate to 30 fps (or desired rate)
+        fps = 30
+        frame_interval = int(1000000000 / fps)  # Convert to nanoseconds
+        print(f"\nSetting frame rate to {fps} fps (interval: {frame_interval}ns)")
+        
+        # Queue initial buffers with timing information
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
             
@@ -877,6 +905,8 @@ def handle_streamon_event(event):
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
+            v4l2_buf.timestamp.tv_sec = 0
+            v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
             
             try:
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
@@ -885,11 +915,11 @@ def handle_streamon_event(event):
                 print(f"  Failed to queue buffer: {e}")
                 print(f"  Error details: {type(e).__name__}")
         
-        # Start streaming thread
+        # Start streaming thread with timing control
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
-        thread = threading.Thread(target=streaming_thread, daemon=True)
+        thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
         thread.start()
         print("Streaming thread started with ID:", thread.ident)
             
@@ -899,10 +929,162 @@ def handle_streamon_event(event):
     
     return None
 
+def streaming_thread(fps):
+    """Background thread to handle continuous streaming with proper timing"""
+    print("\nStreaming thread started")
+    frame_count = 0
+    interval = 1.0 / fps
+    next_frame_time = time.time()
+    
+    poll = select.epoll()
+    poll.register(fd, select.EPOLLOUT | select.EPOLLIN)
+    
+    while state.streaming:
+        try:
+            current_time = time.time()
+            
+            # Wait for buffer to be available with timeout
+            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
+            if not events:
+                continue
+            
+            # Calculate time until next frame
+            sleep_time = next_frame_time - current_time
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            
+            print(f"\nFrame {frame_count}: Processing...")
+            
+            # Dequeue a buffer
+            buf = v4l2_buffer()
+            buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+            buf.memory = V4L2_MEMORY_MMAP
+            
+            try:
+                fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
+                print(f"Dequeued buffer {buf.index}")
+            except OSError as e:
+                if e.errno == errno.EAGAIN:
+                    continue
+                raise
+            
+            # Update the test pattern
+            buffer = buffers[buf.index]
+            print(f"Generating test pattern for frame {frame_count}...")
+            bytes_used = generate_test_pattern(
+                buffer['mmap'], 
+                current_format.width, 
+                current_format.height,
+                offset=frame_count
+            )
+            print(f"Generated pattern with {bytes_used} bytes")
+            
+            # Set buffer timestamp
+            buf.timestamp.tv_sec = int(current_time)
+            buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
+            buf.bytesused = bytes_used
+            
+            # Queue the buffer back
+            try:
+                fcntl.ioctl(fd, VIDIOC_QBUF, buf)
+                print(f"Buffer {buf.index} queued successfully")
+                frame_count += 1
+                next_frame_time = current_time + interval
+            except OSError as e:
+                if e.errno != errno.EAGAIN:
+                    raise
+                    
+        except Exception as e:
+            if not state.streaming:  # Expected when stopping
+                print("Streaming stopped normally")
+                break
+            print(f"Streaming error: {e}")
+            print(f"Error details: {type(e).__name__}")
+            if isinstance(e, OSError):
+                print(f"Error number: {e.errno}")
+            break
+            
+    poll.unregister(fd)
+    poll.close()
+    print("Streaming thread ended")
+
+def generate_test_pattern(mm, width, height, offset=0):
+    """Fill buffer with a moving test pattern"""
+    print(f"\nGenerating test pattern:")
+    print(f"  Width: {width}")
+    print(f"  Height: {height}")
+    print(f"  Offset: {offset}")
+    
+    pattern = bytearray()
+    bytes_per_line = width * 2  # 2 bytes per pixel for YUYV
+    square_size = 64  # Larger squares to make pattern more visible
+    horizontal_offset = offset % width  # Full width movement
+    
+    print(f"  Bytes per line: {bytes_per_line}")
+    print(f"  Square size: {square_size}")
+    print(f"  Horizontal offset: {horizontal_offset}")
+    
+    for y in range(height):
+        for x in range(0, bytes_per_line, 4):  # Process 2 pixels (4 bytes) at a time
+            pixel_x = x // 2  # Convert byte position to pixel position
+            shifted_x = (pixel_x + horizontal_offset) % width
+            
+            # Create checkerboard pattern
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+            color = WHITE if is_white else GRAY
+            
+            # Write 4 bytes (2 pixels) of YUYV data
+            pattern.extend(color.to_bytes(4, byteorder='little'))
+
+    try:
+        mm.seek(0)
+        mm.write(bytes(pattern))  # Convert bytearray to bytes before writing
+        print(f"  Successfully wrote {len(pattern)} bytes to buffer")
+    except Exception as e:
+        print(f"Error writing to memory map: {e}")
+        print(f"Error details: {type(e).__name__}")
+        raise  # Re-raise the exception to see where it's happening
+        
+    return len(pattern)
+
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
     print("Handling STREAMOFF event")
     return stream_off(fd)
+
+def process_frame(mm, width, height, frame_count):
+    """Process a single frame with proper timing"""
+    offset = frame_count % width  # Create movement effect
+    bytes_written = generate_test_pattern(mm, width, height, offset)
+    print(f"\nProcessing buffer {frame_count % 4}:")  # Assuming 4 buffers
+    return bytes_written
+
+def stream_video(fd, width, height, fps):
+    """Stream video with proper timing"""
+    frame_count = 0
+    interval = 1.0 / fps  # Calculate interval between frames
+    next_frame_time = time.time()
+
+    while True:
+        try:
+            current_time = time.time()
+            if current_time >= next_frame_time:
+                # Process and queue the next frame
+                process_frame(mm, width, height, frame_count)
+                frame_count += 1
+                next_frame_time = current_time + interval
+                
+                # Sleep for a small amount to prevent CPU spinning
+                sleep_time = max(0, next_frame_time - time.time())
+                if sleep_time > 0:
+                    time.sleep(sleep_time)
+            else:
+                # Small sleep to prevent CPU spinning while waiting
+                time.sleep(0.001)
+                
+        except Exception as e:
+            print(f"Error in streaming loop: {e}")
+            break
 
 if __name__ == "__main__":
     main()
