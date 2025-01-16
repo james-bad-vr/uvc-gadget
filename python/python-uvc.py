@@ -608,7 +608,7 @@ def streaming_thread(fps):
     poll.close()
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
-def generate_test_pattern(width, height):
+def generate_test_pattern(mm, width, height):
     """Generate a single test pattern"""
     pattern = bytearray()
     bytes_per_line = width * 2
@@ -621,7 +621,9 @@ def generate_test_pattern(width, height):
             color = WHITE if is_white else GRAY
             pattern.extend(color.to_bytes(4, byteorder='little'))
 
-    return pattern
+    mm.seek(0)
+    mm.write(bytes(pattern))
+    return len(pattern)
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
@@ -710,13 +712,6 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
-    # Generate a single test pattern
-    test_pattern = generate_test_pattern(
-        current_format.width,
-        current_format.height
-    )
-    print(f"Generated test pattern of {len(test_pattern)} bytes")
-    
     # Allocate buffer objects
     buffers = []
     for i in range(req.count):
@@ -744,15 +739,18 @@ def init_video_buffers(fd):
             print(f"  Length: {buf.length}")
             
             # Write the test pattern to the buffer immediately
-            mm.seek(0)
-            mm.write(test_pattern)
+            pattern_size = generate_test_pattern(
+                mm,
+                current_format.width,
+                current_format.height
+            )
             
             buffers.append({
                 'index': i,
                 'length': buf.length,
                 'mmap': mm,
                 'start': mm,
-                'pattern_size': len(test_pattern)
+                'pattern_size': pattern_size
             })
         except Exception as e:
             print(f"Failed to mmap buffer {i}: {e}")
