@@ -306,19 +306,22 @@ def handle_request(fd, ctrl, req, response):
         response.length = sizeof(uvc_streaming_control)
     elif req.bRequest == UVC_GET_INFO:
         print("-> GET_INFO request")
-        response.data[0] = 0x03
+        response.data[0] = 0x03  # Supports GET/SET
         response.length = 1
     elif req.bRequest == UVC_GET_LEN:
         print("-> GET_LEN request")
         response.data[0] = sizeof(uvc_streaming_control)
         response.data[1] = 0x00
         response.length = 2
-    elif req.bRequest == UVC_SET_CUR:
-        print("-> SET_CUR request")
-        # Handle specific SET_CUR logic if needed
-        response.length = 0  # Acknowledge
+    elif req.bRequest == UVC_GET_RES:
+        print("-> GET_RES request")
+        response.data[0] = 0x00
+        response.length = sizeof(uvc_streaming_control)
     else:
         print(f"Unhandled bRequest: 0x{req.bRequest:02x}")
+        response.length = -errno.EINVAL
+
+    return response
 
 def handle_connect_event(event):
     print("UVC_EVENT_CONNECT")
