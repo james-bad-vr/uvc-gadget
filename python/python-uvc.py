@@ -474,7 +474,7 @@ def handle_disconnect_event(event):
     return None
 
 def handle_streamon_event(event):
-    """Handle stream on event"""
+    """Handle UVC_EVENT_STREAMON"""
     print("\nUVC_EVENT_STREAMON")
     global state
     
@@ -501,7 +501,11 @@ def handle_streamon_event(event):
             print(f"\nProcessing buffer {buf['index']}:")
             
             # Fill buffer with test pattern
-            bytes_used = generate_test_pattern(buf['mmap'], current_format.width, current_format.height)
+            bytes_used = generate_test_pattern(
+                buf['mmap'], 
+                current_format.width, 
+                current_format.height
+            )
             
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
@@ -564,13 +568,20 @@ def streaming_thread():
             
             frame_count += 1
             
+        except OSError as e:
+            if e.errno == errno.EAGAIN:  # Resource temporarily unavailable
+                time.sleep(0.001)  # Short sleep before retry
+                continue
+            print(f"Streaming error: {e}")
+            print(f"Error details: {type(e).__name__}")
+            break
         except Exception as e:
             if not state.streaming:  # Expected when stopping
                 print("Streaming stopped normally")
                 break
             print(f"Streaming error: {e}")
             print(f"Error details: {type(e).__name__}")
-            time.sleep(0.1)  # Avoid tight loop on error
+            break
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Fill buffer with a moving test pattern"""
@@ -613,16 +624,8 @@ def generate_test_pattern(mm, width, height, offset=0):
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
-    print("UVC_EVENT_STREAMOFF")
-    state.streaming = False
-    
-    try:
-        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-        fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
-    except Exception as e:
-        print(f"Error stopping stream: {e}")
-    
-    return None
+    print("Handling STREAMOFF event")
+    return stream_off(fd)
 
 def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
@@ -849,7 +852,11 @@ def handle_streamon_event(event):
             print(f"\nProcessing buffer {buf['index']}:")
             
             # Fill buffer with test pattern
-            bytes_used = generate_test_pattern(buf['mmap'], current_format.width, current_format.height)
+            bytes_used = generate_test_pattern(
+                buf['mmap'], 
+                current_format.width, 
+                current_format.height
+            )
             
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
