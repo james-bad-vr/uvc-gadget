@@ -140,6 +140,17 @@ class timeval(Structure):
         ('tv_usec', c_long)
     ]
 
+class v4l2_timecode(Structure):
+    _fields_ = [
+        ('type', c_uint32),
+        ('flags', c_uint32),
+        ('frames', c_uint8),
+        ('seconds', c_uint8),
+        ('minutes', c_uint8),
+        ('hours', c_uint8),
+        ('userbits', c_uint8 * 4),
+    ]
+    
 class v4l2_event(Structure):
     _fields_ = [
         ('type', c_uint32),
