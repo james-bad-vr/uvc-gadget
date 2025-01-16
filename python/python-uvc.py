@@ -190,13 +190,38 @@ class v4l2_requestbuffers(Structure):
         ('memory', c_uint32),
     ]
 
+class v4l2_plane(Structure):
+    _fields_ = [
+        ('bytesused', c_uint32),
+        ('length', c_uint32),
+        ('m', c_uint32),  # memory offset
+        ('data_offset', c_uint32),
+        ('reserved', c_uint32 * 11)
+    ]
+
+class v4l2_buffer_union(Union):
+    _fields_ = [
+        ('offset', c_uint32),
+        ('userptr', c_ulong),
+        ('planes', POINTER(v4l2_plane)),
+        ('fd', c_int32),
+    ]
+
 class v4l2_buffer(Structure):
     _fields_ = [
         ('index', c_uint32),
         ('type', c_uint32),
         ('bytesused', c_uint32),
         ('flags', c_uint32),
-        ('reserved', c_uint32 * 4)
+        ('field', c_uint32),
+        ('timestamp', timeval),
+        ('timecode', v4l2_timecode),
+        ('sequence', c_uint32),
+        ('memory', c_uint32),
+        ('m', v4l2_buffer_union),
+        ('length', c_uint32),
+        ('reserved2', c_uint32),
+        ('reserved', c_uint32),
     ]
 
 # Global state
@@ -471,7 +496,7 @@ def init_video_buffers(fd):
     """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
     # Request buffers
     req = v4l2_requestbuffers()
-    req.count = 4  # Same as in v4l2_alloc_buffers()
+    req.count = 4
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     req.memory = V4L2_MEMORY_MMAP
     
@@ -499,20 +524,17 @@ def init_video_buffers(fd):
             return None
             
         # mmap the buffer
-        length = buf.m.planes[0].length if hasattr(buf.m, 'planes') else buf.length
-        offset = buf.m.planes[0].m.mem_offset if hasattr(buf.m, 'planes') else buf.m.offset
-        
         try:
-            mm = mmap.mmap(fd, length, 
+            mm = mmap.mmap(fd, buf.length, 
                           flags=mmap.MAP_SHARED,
                           prot=mmap.PROT_READ | mmap.PROT_WRITE,
-                          offset=offset)
+                          offset=buf.m.offset)
                           
-            print(f"Buffer {i} mapped at offset {offset}, length {length}")
+            print(f"Buffer {i} mapped at offset {buf.m.offset}, length {buf.length}")
             
             buffers.append({
                 'index': i,
-                'length': length,
+                'length': buf.length,
                 'mmap': mm,
                 'start': mm
             })
