@@ -4,11 +4,15 @@ import struct
 import os
 import time
 import select
+import errno
+import sys
 from ctypes import (
-    Structure, Union, c_uint32, c_uint8, c_int32, c_uint16, c_long,
+    Structure, Union, c_char, c_uint32, c_uint8, c_int32, c_uint16, c_long,
     sizeof, addressof, pointer, cast, POINTER, create_string_buffer,
     memmove, memset
 )
+
+print(f"System endianness: {sys.byteorder}")
 
 # IOCTL codes
 VIDIOC_QUERYCAP = 0x80685600
@@ -47,18 +51,35 @@ UVC_GET_LEN = 0x85
 UVC_GET_INFO = 0x86
 UVC_GET_DEF = 0x87
 
+# USB types
+USB_TYPE_MASK = 0x60
+USB_TYPE_STANDARD = 0x00
+USB_TYPE_CLASS = 0x20
+
 # V4L2 formats and flags
 V4L2_PIX_FMT_YUYV = 0x56595559
 V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
 V4L2_FIELD_NONE = 1
 
+class v4l2_capability(Structure):
+    _fields_ = [
+        ("driver", c_char * 16),
+        ("card", c_char * 32),
+        ("bus_info", c_char * 32),
+        ("version", c_uint32),
+        ("capabilities", c_uint32),
+        ("device_caps", c_uint32),
+        ("reserved", c_uint32 * 3)
+    ]
+
 class usb_ctrlrequest(Structure):
+    _pack_ = 1  # Add this line for proper packing
     _fields_ = [
         ('bRequestType', c_uint8),
         ('bRequest', c_uint8),
-        ('wValue', c_uint16),
-        ('wIndex', c_uint16),
-        ('wLength', c_uint16),
+        ('wValue', c_uint16.__ctype_le__),  # Force little-endian
+        ('wIndex', c_uint16.__ctype_le__),  # Force little-endian
+        ('wLength', c_uint16.__ctype_le__), # Force little-endian
     ]
 
 class uvc_request_data(Structure):
@@ -157,6 +178,86 @@ class DeviceState:
 
 state = DeviceState()
 
+def main():
+    """Main program loop"""
+    try:
+        device_path = "/dev/video0"
+        print(f"Opening {device_path}")
+        fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
+        
+        # Query device capabilities
+        cap = v4l2_capability()
+        fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
+        
+        # Print the queried capabilities
+        print(f"Driver: {cap.driver.decode('utf-8')}")
+        print(f"Card: {cap.card.decode('utf-8')}")
+        print(f"Bus Info: {cap.bus_info.decode('utf-8')}")
+        print(f"Version: {cap.version}")
+        print(f"Capabilities: 0x{cap.capabilities:08x}")
+        print(f"Device Caps: 0x{cap.device_caps:08x}")
+        print("")
+        
+        # Subscribe to all events
+        if subscribe_events(fd) < 0:
+            print("Failed to subscribe to events")
+            return
+
+        print("\nDevice ready - waiting for events...")
+        print(f"Structure sizes:")
+        print(f"  v4l2_event: {sizeof(v4l2_event)}")
+        print(f"  uvc_event: {sizeof(uvc_event)}")
+        print(f"  uvc_request_data: {sizeof(uvc_request_data)}")
+        print(f"  usb_ctrlrequest: {sizeof(usb_ctrlrequest)}")
+        print(f"  uvc_streaming_control: {sizeof(uvc_streaming_control)}")
+        
+        epoll = select.epoll()
+        epoll.register(fd, select.EPOLLPRI)
+        
+        event = v4l2_event()
+        
+        while True:
+            events = epoll.poll(1)  # 1-second timeout
+            for fd, event_mask in events:
+                try:
+                    fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
+                    
+                    handler = EVENT_HANDLERS.get(event.type)
+                    if handler:
+                        response = handler(event)
+                        if response is not None:
+                            try:
+                                fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+                                print("Response sent successfully")
+                            except Exception as e:
+                                print(f"Failed to send response: {e}")
+                    else:
+                        print(f"Warning: No handler for event type 0x{event.type:08x}")
+                        
+                except Exception as e:
+                    print(f"Error handling event: {e}")
+                    print(f"Error details: {e!r}")
+                    continue
+            
+            if not events:
+                # Print a dot to show we're still running
+                print(".", end="", flush=True)
+            
+            time.sleep(0.01)  # Small sleep to prevent busy-waiting
+
+    except KeyboardInterrupt:
+        print("\nExiting...")
+    except Exception as e:
+        print(f"Error: {e}")
+        print(f"Details: {e!r}")
+    finally:
+        if 'epoll' in locals():
+            epoll.unregister(fd)
+            epoll.close()
+        if 'fd' in locals():
+            os.close(fd)
+            print("Device closed")
+
 def init_streaming_control(ctrl):
     """Initialize streaming control with default values"""
     ctrl.bmHint = 1
@@ -230,18 +331,45 @@ def handle_request(fd, ctrl, req, response):
         response.data[1] = 0x00
         response.length = 2
 
-def handle_setup_event(fd, event):
-    """Handle UVC setup events"""
+def handle_connect_event(event):
+    print("UVC_EVENT_CONNECT")
+    init_streaming_control(state.probe_control)
+    init_streaming_control(state.commit_control)
+    state.connected = True
+    return None
+
+def handle_disconnect_event(event):
+    print("UVC_EVENT_DISCONNECT")
+    state.connected = False
+    return None
+
+def handle_streamon_event(event):
+    print("UVC_EVENT_STREAMON")
+    state.streaming = True
+    return None
+
+def handle_streamoff_event(event):
+    print("UVC_EVENT_STREAMOFF")
+    state.streaming = False
+    return None
+
+def handle_setup_event(event):
+    print("\nUVC_EVENT_SETUP")
     req = event.u.req
     response = uvc_request_data()
-    response.length = -1
+    response.length = -errno.EL2HLT
 
-    print(f"\nSetup Request:")
+    print(f"Setup Request:")
     print(f"  bmRequestType: 0x{req.bRequestType:02x}")
     print(f"  bRequest: 0x{req.bRequest:02x}")
     print(f"  wValue: 0x{req.wValue:04x}")
     print(f"  wIndex: 0x{req.wIndex:04x}")
     print(f"  wLength: {req.wLength}")
+
+    if req.bRequestType & USB_TYPE_MASK == USB_TYPE_STANDARD:
+        print("  USB standard request")
+    elif req.bRequestType & USB_TYPE_MASK == USB_TYPE_CLASS:
+        print("  USB class request")
 
     cs = (req.wValue >> 8) & 0xFF
     print(f"  Control Selector: 0x{cs:02x}")
@@ -250,25 +378,19 @@ def handle_setup_event(fd, event):
         ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
         
         if req.bRequestType == 0xA1:  # GET
-            handle_request(fd, ctrl, req, response)
+            handle_request(None, ctrl, req, response)
         elif req.bRequestType == 0x21:  # SET
             if req.bRequest == UVC_SET_CUR:
                 print(f"-> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
                 state.current_control = cs
                 response.length = sizeof(uvc_streaming_control)
 
-    if response.length >= 0:
-        try:
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print(f"Response sent: length={response.length}")
-        except Exception as e:
-            print(f"Failed to send response: {e}")
+    return response
 
 def handle_data_event(event):
-    """Handle UVC data events"""
-    print("\nData event received")
+    print("\nUVC_EVENT_DATA")
     if state.current_control is None:
-        return
+        return None
 
     data_len = min(event.u.data.length, sizeof(uvc_streaming_control))
     
@@ -280,58 +402,16 @@ def handle_data_event(event):
         memmove(addressof(state.commit_control), event.u.data.data, data_len)
     
     state.current_control = None
+    return None
 
-def handle_event(fd):
-    event = v4l2_event()
-    try:
-        fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
-        
-        print(f"\nEvent received:")
-        print(f"  Type: 0x{event.type:08x}")
-        print(f"  Sequence: {event.sequence}")
-        print(f"  Pending: {event.pending}")
-        
-        # Create empty response by default for every event
-        response = uvc_request_data()
-        memset(addressof(response), 0, sizeof(response))
-        response.length = -1  # Equivalent to -EL2HLT in C
-        
-        if event.type == UVC_EVENT_SETUP:
-            handle_setup_event(fd, event)
-        elif event.type == UVC_EVENT_DATA:
-            handle_data_event(event)
-        elif event.type == UVC_EVENT_STREAMON:
-            print("Stream ON event received")
-        elif event.type == UVC_EVENT_STREAMOFF:
-            print("Stream OFF event received")
-        elif event.type == UVC_EVENT_CONNECT:
-            print("Connect event received")
-            init_streaming_control(probe_control)
-            init_streaming_control(commit_control)
-        elif event.type == UVC_EVENT_DISCONNECT:
-            print("Disconnect event received")
-        elif event.type == 0:
-            print("Warning: Received event with type 0")
-            print("Event memory:")
-            event_bytes = bytes(event)[:128]
-            for i in range(0, len(event_bytes), 16):
-                print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
-        
-        # Always try to send a response, even if empty
-        try:
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print("  -> Empty response sent")
-        except Exception as e:
-            print(f"  -> Failed to send empty response: {e}")
-            
-    except Exception as e:
-        print(f"Error handling event: {e}")
-        print(f"Error details: {e!r}")
-        print(f"Event structure size: {sizeof(event)}")
-        print("Event memory:")
-        event_bytes = bytes(event)[:128]
-        for i in range(0, len(event_bytes), 16):
-            print(f"  {' '.join(f'{b:02x}' for b in event_bytes[i:i+16])}")
+EVENT_HANDLERS = {
+    UVC_EVENT_CONNECT: handle_connect_event,
+    UVC_EVENT_DISCONNECT: handle_disconnect_event,
+    UVC_EVENT_STREAMON: handle_streamon_event,
+    UVC_EVENT_STREAMOFF: handle_streamoff_event,
+    UVC_EVENT_SETUP: handle_setup_event,
+    UVC_EVENT_DATA: handle_data_event,
+}
 
 def subscribe_events(fd):
     """Subscribe to all UVC events"""
@@ -345,63 +425,14 @@ def subscribe_events(fd):
     ]
     
     for event_type in events:
-        sub = v4l2_event_subscription()
-        memset(addressof(sub), 0, sizeof(sub))
-        sub.type = event_type
+        sub = v4l2_event_subscription(type=event_type)
         try:
             fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, sub)
             print(f"Subscribed to event 0x{event_type:08x}")
-            sub_bytes = bytes(sub)
-            print(f"Subscription data: {' '.join(f'{b:02x}' for b in sub_bytes[:16])}")
         except Exception as e:
             print(f"Failed to subscribe to event 0x{event_type:08x}: {e}")
             return -1
     return 0
-
-def main():
-    """Main program loop"""
-    try:
-        device_path = "/dev/video0"
-        print(f"Opening {device_path}")
-        fd = os.open(device_path, os.O_RDWR | os.O_NONBLOCK)
-        
-        # Subscribe to all events
-        if subscribe_events(fd) < 0:
-            print("Failed to subscribe to events")
-            return
-
-        print("\nDevice ready - waiting for events...")
-        print(f"Structure sizes:")
-        print(f"  v4l2_event: {sizeof(v4l2_event)}")
-        print(f"  uvc_event: {sizeof(uvc_event)}")
-        print(f"  uvc_request_data: {sizeof(uvc_request_data)}")
-        print(f"  usb_ctrlrequest: {sizeof(usb_ctrlrequest)}")
-        print(f"  uvc_streaming_control: {sizeof(uvc_streaming_control)}")
-        
-        poll = select.poll()
-        poll.register(fd, select.POLLPRI)
-        
-        while True:
-            events = poll.poll(1000)  # 1 second timeout
-            if events:
-                for fd, event_mask in events:
-                    print(f"\nPoll event received - mask: 0x{event_mask:04x}")
-                    handle_event(fd)
-            else:
-                # Print a dot to show we're still running
-                print(".", end="", flush=True)
-
-            time.sleep(0.01)  # Small sleep to prevent busy-waiting
-
-    except KeyboardInterrupt:
-        print("\nExiting...")
-    except Exception as e:
-        print(f"Error: {e}")
-        print(f"Details: {e!r}")
-    finally:
-        if 'fd' in locals():
-            os.close(fd)
-            print("Device closed")
 
 if __name__ == "__main__":
     main()
