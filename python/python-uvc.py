@@ -224,17 +224,34 @@ def find_configfs_mount():
                 return fields[1]
     return None
 
-def read_attribute(path, attr_name):
+def read_attribute(path, attr_name, binary=False):
     """Read an attribute from a ConfigFS file"""
     full_path = os.path.join(path, attr_name)
     try:
-        with open(full_path, 'r') as f:
-            content = f.read().strip()
+        mode = 'rb' if binary else 'r'
+        with open(full_path, mode) as f:
+            content = f.read()
+            if not binary:
+                content = content.strip()
             print(f"attribute_read: Successfully read {len(content)} bytes from file '{full_path}'")
             return content
     except Exception as e:
         print(f"Failed to read attribute {attr_name} from {path}: {e}")
         return None
+
+def format_guid(guid_bytes):
+    """Format binary GUID data as string"""
+    if not guid_bytes or len(guid_bytes) != 16:
+        return None
+    # Convert binary GUID to string representation
+    guid_parts = [
+        guid_bytes[0:4][::-1].hex(),
+        guid_bytes[4:6][::-1].hex(),
+        guid_bytes[6:8][::-1].hex(),
+        guid_bytes[8:10].hex(),
+        guid_bytes[10:16].hex()
+    ]
+    return f"{{{'-'.join(guid_parts)}}}"
 
 def parse_uvc_function():
     """Parse UVC function configuration from ConfigFS"""
@@ -277,11 +294,12 @@ def parse_uvc_function():
     streaming_class_path = os.path.join(streaming_path, "class/hs/h/u")
     if os.path.exists(streaming_class_path):
         format_index = int(read_attribute(streaming_class_path, "bFormatIndex") or "1")
-        guid = read_attribute(streaming_class_path, "guidFormat")
+        guid_bytes = read_attribute(streaming_class_path, "guidFormat", binary=True)
+        if guid_bytes:
+            video_format.guid = format_guid(guid_bytes)
         
         video_format = VideoFormat()
         video_format.index = format_index
-        video_format.guid = guid
 
         # Parse frames
         for frame_dir in glob.glob(os.path.join(streaming_class_path, "*x*")):
@@ -391,56 +409,42 @@ def main():
         print("Device closed")
 
 def init_streaming_control(ctrl):
-    """Initialize streaming control with default values"""
+    """Initialize streaming control with values from config"""
     ctrl.bmHint = 1
-    ctrl.bFormatIndex = 1
-    ctrl.bFrameIndex = 1
-    ctrl.dwFrameInterval = 333333  # 30 fps
-    ctrl.wKeyFrameRate = 0
-    ctrl.wPFrameRate = 0
-    ctrl.wCompQuality = 0
-    ctrl.wCompWindowSize = 0
-    ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2
-    ctrl.dwMaxPayloadTransferSize = 3072
-    ctrl.dwClockFrequency = 48000000
-    ctrl.bmFramingInfo = 3
-    ctrl.bPreferedVersion = 1
-    ctrl.bMinVersion = 1
-    ctrl.bMaxVersion = 1
-
-def set_video_format(fd):
-    """Set the video format on the device"""
-    fmt = v4l2_format()
-    fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.u.fmt.pix.width = 640
-    fmt.u.fmt.pix.height = 360
-    fmt.u.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
-    fmt.u.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.u.fmt.pix.sizeimage = 640 * 360 * 2
-    fmt.u.fmt.pix.bytesperline = 640 * 2
+    ctrl.bFormatIndex = 1  # First format
+    ctrl.bFrameIndex = 1   # First frame
+    ctrl.dwFrameInterval = 166666  # 60fps (1/60 * 10^7)
     
-    try:
-        fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
-        print("Video format set successfully")
-        state.format_set = True
-        return 0
-    except Exception as e:
-        print(f"Failed to set video format: {e}")
-        return -1
+    # Get these from the config we read
+    frame = next((f for fmt in config.formats for f in fmt.frames if f.index == ctrl.bFrameIndex), None)
+    if frame:
+        ctrl.wWidth = frame.width
+        ctrl.wHeight = frame.height
+        ctrl.dwMaxVideoFrameSize = frame.width * frame.height * 2  # Assuming YUYV
+        ctrl.dwMaxPayloadTransferSize = config.streaming_maxpacket
 
 def handle_request(fd, ctrl, req, response):
+    """Handle a UVC request"""
     print(f"Handling bRequest: 0x{req.bRequest:02x}")
+    
     if req.bRequest == UVC_GET_CUR:
         print("-> GET_CUR request")
-        memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
-        response.length = sizeof(uvc_streaming_control)
+        if hasattr(ctrl, 'dwFrameInterval'):  # If it's a streaming control
+            memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
+            response.length = sizeof(uvc_streaming_control)
+        else:  # Camera terminal control
+            response.data[0] = 0x00
+            response.length = req.wLength
     elif req.bRequest == UVC_GET_MIN:
         print("-> GET_MIN request")
-        temp_ctrl = uvc_streaming_control()
-        init_streaming_control(temp_ctrl)
-        memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
-        response.length = sizeof(uvc_streaming_control)
+        if hasattr(ctrl, 'dwFrameInterval'):
+            temp_ctrl = uvc_streaming_control()
+            init_streaming_control(temp_ctrl)
+            memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
+            response.length = sizeof(uvc_streaming_control)
+        else:
+            response.data[0] = 0x00
+            response.length = req.wLength
     elif req.bRequest == UVC_GET_MAX:
         print("-> GET_MAX request")
         temp_ctrl = uvc_streaming_control()
