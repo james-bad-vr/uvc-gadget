@@ -73,12 +73,13 @@ class v4l2_capability(Structure):
     ]
 
 class usb_ctrlrequest(Structure):
+    _pack_ = 1  # Add this line for proper packing
     _fields_ = [
         ('bRequestType', c_uint8),
         ('bRequest', c_uint8),
-        ('wValue', c_uint16),
-        ('wIndex', c_uint16),
-        ('wLength', c_uint16),
+        ('wValue', c_uint16.__ctype_le__),  # Force little-endian
+        ('wIndex', c_uint16.__ctype_le__),  # Force little-endian
+        ('wLength', c_uint16.__ctype_le__), # Force little-endian
     ]
 
 class uvc_request_data(Structure):
