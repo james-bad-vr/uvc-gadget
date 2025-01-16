@@ -344,11 +344,15 @@ def handle_streamoff_event(event):
 
 def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
-    # Create a raw request struct from the event data
-    print("Creating request struct from event data...")
-    req = usb_ctrlrequest.from_buffer_copy(event.u.data)
+    print("Raw event data (first 8 bytes):")
+    # Print the first 8 bytes of raw data
+    raw_data = bytes(event.u.data.data[:8])
+    print(' '.join(f'{b:02x}' for b in raw_data))
+    
+    # Create request struct from the first 8 bytes of event data
+    req = usb_ctrlrequest.from_buffer_copy(raw_data)
     response = uvc_request_data()
-    response.length = -errno.EL2HLT  # Default response length (failure)
+    response.length = -errno.EL2HLT
 
     print(f"Setup Request:")
     print(f"  bmRequestType: 0x{req.bRequestType:02x}")
@@ -357,10 +361,9 @@ def handle_setup_event(event):
     print(f"  wIndex: 0x{req.wIndex:04x}")
     print(f"  wLength: {req.wLength}")
 
+    # Extract control selector from wValue
     cs = (req.wValue >> 8) & 0xFF
     print(f"  Control Selector: 0x{cs:02x}")
-
-    # Add debug print before control selector check
     print(f"Checking if cs (0x{cs:02x}) is in [{UVC_VS_PROBE_CONTROL}, {UVC_VS_COMMIT_CONTROL}]")
     
     if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
@@ -368,17 +371,20 @@ def handle_setup_event(event):
         ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
         print(f"Request type: 0x{req.bRequestType:02x}")
 
-        if req.bRequestType == 0xA1:  # GET
-            print("  Handling GET request")
-            handle_request(None, ctrl, req, response)
-        elif req.bRequestType == 0x21:  # SET
-            print("  Handling SET request")
-            if req.bRequest == UVC_SET_CUR:
-                print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
-                state.current_control = cs
-                response.length = sizeof(uvc_streaming_control)
+        if req.bRequestType & USB_TYPE_MASK == USB_TYPE_CLASS:  # Check if it's a class request
+            if req.bRequestType & 0x80:  # GET
+                print("  Handling GET request")
+                handle_request(None, ctrl, req, response)
+            else:  # SET
+                print("  Handling SET request")
+                if req.bRequest == UVC_SET_CUR:
+                    print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
+                    state.current_control = cs
+                    response.length = sizeof(uvc_streaming_control)
     else:
         print(f"Control selector 0x{cs:02x} did not match expected values")
+        # For debugging, let's print the expected values
+        print(f"Expected values: PROBE=0x{UVC_VS_PROBE_CONTROL:02x}, COMMIT=0x{UVC_VS_COMMIT_CONTROL:02x}")
 
     return response
 
