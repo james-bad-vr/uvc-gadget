@@ -78,6 +78,38 @@ V4L2_BUF_TYPE_VBI_OUTPUT = 5
 V4L2_BUF_TYPE_SLICED_VBI_CAPTURE = 6
 V4L2_BUF_TYPE_SLICED_VBI_OUTPUT = 7
 
+# V4L2 colorspace constants
+V4L2_COLORSPACE_DEFAULT = 0
+V4L2_COLORSPACE_SMPTE170M = 1
+V4L2_COLORSPACE_SMPTE240M = 2
+V4L2_COLORSPACE_REC709 = 3
+V4L2_COLORSPACE_BT878 = 4
+V4L2_COLORSPACE_470_SYSTEM_M = 5
+V4L2_COLORSPACE_470_SYSTEM_BG = 6
+V4L2_COLORSPACE_JPEG = 7
+V4L2_COLORSPACE_SRGB = 8
+V4L2_COLORSPACE_OPRGB = 9
+V4L2_COLORSPACE_BT2020 = 10
+V4L2_COLORSPACE_RAW = 11
+V4L2_COLORSPACE_DCI_P3 = 12
+
+# V4L2 xfer function constants
+V4L2_XFER_FUNC_DEFAULT = 0
+V4L2_XFER_FUNC_709 = 1
+V4L2_XFER_FUNC_SRGB = 2
+
+# V4L2 YCbCr encoding constants
+V4L2_YCBCR_ENC_DEFAULT = 0
+V4L2_YCBCR_ENC_601 = 1
+V4L2_YCBCR_ENC_709 = 2
+V4L2_YCBCR_ENC_XV601 = 3
+V4L2_YCBCR_ENC_XV709 = 4
+
+# V4L2 quantization constants
+V4L2_QUANTIZATION_DEFAULT = 0
+V4L2_QUANTIZATION_FULL_RANGE = 1
+V4L2_QUANTIZATION_LIM_RANGE = 2
+
 class v4l2_capability(Structure):
     _fields_ = [
         ("driver", c_char * 16),
@@ -364,6 +396,9 @@ def set_video_format(fd):
     fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
     fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
+    fmt.fmt.pix.xfer_func = V4L2_XFER_FUNC_SRGB
+    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601  # Standard for YUYV
+    fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
     
     try:
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
