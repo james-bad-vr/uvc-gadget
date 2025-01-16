@@ -111,6 +111,10 @@ V4L2_QUANTIZATION_DEFAULT = 0
 V4L2_QUANTIZATION_FULL_RANGE = 1
 V4L2_QUANTIZATION_LIM_RANGE = 2
 
+# Add these color constants at the top with other constants
+WHITE = 0x80eb80eb
+GRAY = 0x807F7F7F
+
 class v4l2_capability(Structure):
     _fields_ = [
         ("driver", c_char * 16),
@@ -477,12 +481,20 @@ def handle_streamon_event(event):
     try:
         # Start the video stream
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        print("Starting video stream...")
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
         
         if not current_format or not buffers:
             print("Error: Missing format or buffers")
             return None
+            
+        print(f"\nCurrent format:")
+        print(f"  Width: {current_format.width}")
+        print(f"  Height: {current_format.height}")
+        print(f"  Pixel format: {hex(current_format.pixelformat)}")
+        print(f"  Bytes per line: {current_format.bytesperline}")
+        print(f"  Size image: {current_format.sizeimage}")
             
         # Queue initial buffers
         for buf in buffers:
@@ -502,19 +514,23 @@ def handle_streamon_event(event):
                 print(f"  Successfully queued buffer {buf['index']}")
             except Exception as e:
                 print(f"  Failed to queue buffer: {e}")
+                print(f"  Error details: {type(e).__name__}")
         
         # Start streaming thread
         state.streaming = True
+        print("\nStarting streaming thread...")
         import threading
         threading.Thread(target=streaming_thread, daemon=True).start()
             
     except Exception as e:
         print(f"Failed to start stream: {e}")
+        print(f"Error details: {type(e).__name__}")
     
     return None
 
 def streaming_thread():
     """Background thread to handle continuous streaming"""
+    print("\nStreaming thread started")
     frame_count = 0
     while state.streaming:
         try:
@@ -522,51 +538,74 @@ def streaming_thread():
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
+            print(f"\nTrying to dequeue buffer...")
             fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
+            print(f"Dequeued buffer {buf.index}")
             
             # Update the test pattern
             buffer = buffers[buf.index]
+            print(f"Generating test pattern for frame {frame_count}...")
             bytes_used = generate_test_pattern(
                 buffer['mmap'], 
                 current_format.width, 
                 current_format.height,
                 offset=frame_count % 255  # Create moving pattern
             )
+            print(f"Generated pattern with {bytes_used} bytes")
             
             # Queue the buffer back
             buf.bytesused = bytes_used
+            print(f"Queueing buffer {buf.index} back...")
             fcntl.ioctl(fd, VIDIOC_QBUF, buf)
+            print(f"Buffer {buf.index} queued successfully")
             
             frame_count += 1
             time.sleep(1/30)  # Cap at 30fps
             
         except Exception as e:
             if not state.streaming:  # Expected when stopping
+                print("Streaming stopped normally")
                 break
             print(f"Streaming error: {e}")
+            print(f"Error details: {type(e).__name__}")
             time.sleep(0.1)  # Avoid tight loop on error
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Fill buffer with a moving test pattern"""
+    print(f"\nGenerating test pattern:")
+    print(f"  Width: {width}")
+    print(f"  Height: {height}")
+    print(f"  Offset: {offset}")
+    
     pattern = bytearray()
-    total_bytes = 0
+    bytes_per_line = width * 2  # 2 bytes per pixel for YUYV
+    square_size = 32  # Size of each square in pixels
+    horizontal_offset = offset % (square_size * 2)
+    
+    print(f"  Bytes per line: {bytes_per_line}")
+    print(f"  Square size: {square_size}")
+    print(f"  Horizontal offset: {horizontal_offset}")
     
     for y in range(height):
-        for x in range(0, width, 2):
-            # Create moving gradient
-            y1 = (x + y + offset) % 255
-            u = 128
-            y2 = (x + y + offset + 1) % 255
-            v = 128
-            pattern.extend([y1, u, y2, v])
-            total_bytes += 4
+        for x in range(0, bytes_per_line, 4):  # Process 2 pixels (4 bytes) at a time
+            pixel_x = x // 2  # Convert byte position to pixel position
+            shifted_x = (pixel_x + horizontal_offset) % width
+            
+            # Create checkerboard pattern
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+            color = WHITE if is_white else GRAY
+
+            # Write 4 bytes (2 pixels) of YUYV data
+            pattern.extend(color.to_bytes(4, byteorder='little'))
 
     try:
         mm.seek(0)
         mm.write(pattern)
+        print(f"  Successfully wrote {len(pattern)} bytes to buffer")
     except Exception as e:
         print(f"Error writing to memory map: {e}")
-    
+        print(f"Error details: {type(e).__name__}")
+        
     return len(pattern)
 
 def handle_streamoff_event(event):
@@ -781,21 +820,58 @@ def stream_off(fd):
 
 def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
-    print("Handling STREAMON event")
-    global buffers, current_format  # Access the global variables
+    print("\nUVC_EVENT_STREAMON")
+    global state
     
-    if not current_format:
-        print("Error: No video format set")
-        return False
+    try:
+        # Start the video stream
+        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        print("Starting video stream...")
+        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        print("Stream started successfully")
         
-    print(f"Current format: {current_format.width}x{current_format.height}")
+        if not current_format or not buffers:
+            print("Error: Missing format or buffers")
+            return None
+            
+        print(f"\nCurrent format:")
+        print(f"  Width: {current_format.width}")
+        print(f"  Height: {current_format.height}")
+        print(f"  Pixel format: {hex(current_format.pixelformat)}")
+        print(f"  Bytes per line: {current_format.bytesperline}")
+        print(f"  Size image: {current_format.sizeimage}")
+            
+        # Queue initial buffers
+        for buf in buffers:
+            print(f"\nProcessing buffer {buf['index']}:")
+            
+            # Fill buffer with test pattern
+            bytes_used = generate_test_pattern(buf['mmap'], current_format.width, current_format.height)
+            
+            v4l2_buf = v4l2_buffer()
+            v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+            v4l2_buf.memory = V4L2_MEMORY_MMAP
+            v4l2_buf.index = buf['index']
+            v4l2_buf.bytesused = bytes_used
+            
+            try:
+                fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+                print(f"  Successfully queued buffer {buf['index']}")
+            except Exception as e:
+                print(f"  Failed to queue buffer: {e}")
+                print(f"  Error details: {type(e).__name__}")
+        
+        # Start streaming thread
+        state.streaming = True
+        print("\nStarting streaming thread...")
+        import threading
+        threading.Thread(target=streaming_thread, daemon=True).start()
+            
+    except Exception as e:
+        print(f"Failed to start stream: {e}")
+        print(f"Error details: {type(e).__name__}")
     
-    if stream_on(fd):
-        # Queue initial buffers with test pattern
-        if queue_initial_buffers(fd, buffers, current_format.width, current_format.height):
-            print("Successfully queued initial buffers")
-            return True
-    return False
+    return None
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
