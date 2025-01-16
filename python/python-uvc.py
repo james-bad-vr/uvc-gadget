@@ -11,7 +11,7 @@ from ctypes import (
     c_uint8, c_uint16, c_uint32, c_uint64,
     c_int8, c_int16, c_int32, c_int64,
     c_char, c_char_p, c_void_p, c_size_t,
-    c_ulong, c_long, sizeof, addressof, memmove
+    c_ulong, c_long, sizeof, addressof, memmove, byref
 )
 import mmap
 
@@ -699,9 +699,9 @@ def subscribe_events(fd):
 
 def stream_on(fd):
     """Start video streaming"""
-    buf_type = c_int(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+    buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
     try:
-        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        fcntl.ioctl(fd, VIDIOC_STREAMON, byref(buf_type))
         print("Stream ON successful")
         return True
     except Exception as e:
@@ -710,9 +710,9 @@ def stream_on(fd):
 
 def stream_off(fd):
     """Stop video streaming"""
-    buf_type = c_int(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+    buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
     try:
-        fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
+        fcntl.ioctl(fd, VIDIOC_STREAMOFF, byref(buf_type))
         print("Stream OFF successful")
         return True
     except Exception as e:
