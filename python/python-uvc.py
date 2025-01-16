@@ -499,18 +499,29 @@ def init_video_buffers(fd):
             return None
             
         # mmap the buffer
-        mm = mmap.mmap(fd, buf.length, 
-                      flags=mmap.MAP_SHARED,
-                      prot=mmap.PROT_READ | mmap.PROT_WRITE,
-                      offset=buf.m.offset)
-                      
-        print(f"Buffer {i} mapped at offset {buf.m.offset}, length {buf.length}")
+        length = buf.m.planes[0].length if hasattr(buf.m, 'planes') else buf.length
+        offset = buf.m.planes[0].m.mem_offset if hasattr(buf.m, 'planes') else buf.m.offset
         
-        buffers.append({
-            'index': i,
-            'length': buf.length,
-            'mmap': mm
-        })
+        try:
+            mm = mmap.mmap(fd, length, 
+                          flags=mmap.MAP_SHARED,
+                          prot=mmap.PROT_READ | mmap.PROT_WRITE,
+                          offset=offset)
+                          
+            print(f"Buffer {i} mapped at offset {offset}, length {length}")
+            
+            buffers.append({
+                'index': i,
+                'length': length,
+                'mmap': mm,
+                'start': mm
+            })
+        except Exception as e:
+            print(f"Failed to mmap buffer {i}: {e}")
+            # Clean up previously mapped buffers
+            for b in buffers:
+                b['mmap'].close()
+            return None
     
     return buffers
 
