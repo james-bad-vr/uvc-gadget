@@ -214,14 +214,20 @@ def main():
         while True:
             events = epoll.poll(1)  # 1-second timeout
             for fd, event_mask in events:
+                print(f"\nReceived event with mask: 0x{event_mask:x}")
                 event = v4l2_event()
                 try:
                     fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
+                    print(f"Event type: 0x{event.type:08x}")
                     handler = EVENT_HANDLERS.get(event.type)
                     if handler:
+                        print(f"Found handler for event type 0x{event.type:08x}")
                         response = handler(event)
                         if response:
+                            print("Got response, sending...")
                             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+                        else:
+                            print("Handler returned no response")
                     else:
                         print(f"Unhandled event type: 0x{event.type:08x}")
                 except Exception as e:
@@ -307,6 +313,10 @@ def handle_request(fd, ctrl, req, response):
         response.data[0] = sizeof(uvc_streaming_control)
         response.data[1] = 0x00
         response.length = 2
+    elif req.bRequest == UVC_SET_CUR:
+        print("-> SET_CUR request")
+        # Handle specific SET_CUR logic if needed
+        response.length = 0  # Acknowledge
     else:
         print(f"Unhandled bRequest: 0x{req.bRequest:02x}")
 
@@ -335,6 +345,7 @@ def handle_streamoff_event(event):
 def handle_setup_event(event):
     print("\nUVC_EVENT_SETUP")
     # Create a raw request struct from the event data
+    print("Creating request struct from event data...")
     req = usb_ctrlrequest.from_buffer_copy(event.u.data)
     response = uvc_request_data()
     response.length = -errno.EL2HLT  # Default response length (failure)
@@ -349,8 +360,13 @@ def handle_setup_event(event):
     cs = (req.wValue >> 8) & 0xFF
     print(f"  Control Selector: 0x{cs:02x}")
 
+    # Add debug print before control selector check
+    print(f"Checking if cs (0x{cs:02x}) is in [{UVC_VS_PROBE_CONTROL}, {UVC_VS_COMMIT_CONTROL}]")
+    
     if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
+        print(f"Control selector matched! cs=0x{cs:02x}")
         ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
+        print(f"Request type: 0x{req.bRequestType:02x}")
 
         if req.bRequestType == 0xA1:  # GET
             print("  Handling GET request")
@@ -361,6 +377,8 @@ def handle_setup_event(event):
                 print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
                 state.current_control = cs
                 response.length = sizeof(uvc_streaming_control)
+    else:
+        print(f"Control selector 0x{cs:02x} did not match expected values")
 
     return response
 
