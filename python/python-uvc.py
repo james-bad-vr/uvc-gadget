@@ -62,6 +62,15 @@ V4L2_PIX_FMT_YUYV = 0x56595559
 V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
 V4L2_FIELD_NONE = 1
 
+# Add these constants at the top with the other constants
+V4L2_MEMORY_MMAP = 1
+V4L2_MEMORY_USERPTR = 2
+V4L2_MEMORY_OVERLAY = 3
+V4L2_MEMORY_DMABUF = 4
+
+V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
+V4L2_BUF_TYPE_VIDEO_CAPTURE = 1
+
 class v4l2_capability(Structure):
     _fields_ = [
         ("driver", c_char * 16),
@@ -459,10 +468,10 @@ def handle_data_event(event):
     return None
 
 def init_video_buffers(fd):
-    """Initialize video buffers"""
+    """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
     # Request buffers
     req = v4l2_requestbuffers()
-    req.count = 4  # Number of buffers to allocate
+    req.count = 4  # Same as in v4l2_alloc_buffers()
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     req.memory = V4L2_MEMORY_MMAP
     
@@ -471,10 +480,13 @@ def init_video_buffers(fd):
     except Exception as e:
         print(f"Failed to request buffers: {e}")
         return None
+        
+    print(f"{req.count} buffers requested.")
     
-    # Map the buffers
+    # Allocate buffer objects
     buffers = []
     for i in range(req.count):
+        # Query each buffer
         buf = v4l2_buffer()
         buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
         buf.memory = V4L2_MEMORY_MMAP
@@ -486,15 +498,18 @@ def init_video_buffers(fd):
             print(f"Failed to query buffer {i}: {e}")
             return None
             
+        # mmap the buffer
         mm = mmap.mmap(fd, buf.length, 
                       flags=mmap.MAP_SHARED,
                       prot=mmap.PROT_READ | mmap.PROT_WRITE,
                       offset=buf.m.offset)
+                      
+        print(f"Buffer {i} mapped at offset {buf.m.offset}, length {buf.length}")
         
         buffers.append({
-            'buffer': buf,
-            'mmap': mm,
-            'length': buf.length
+            'index': i,
+            'length': buf.length,
+            'mmap': mm
         })
     
     return buffers
