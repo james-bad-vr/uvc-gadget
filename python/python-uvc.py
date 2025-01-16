@@ -615,24 +615,7 @@ def init_video_buffers(fd):
     
     return buffers
 
-def generate_test_pattern(mm, length):
-    """Generate a simple test pattern"""
-    # Create a simple color bar pattern
-    pattern = bytearray()
-    for i in range(0, length, 4):
-        # YUYV format: Y1 U Y2 V
-        y1 = (i // 4) % 256  # Varying luminance
-        u = 128  # Middle U value
-        y2 = y1  # Same luminance for adjacent pixels
-        v = 128  # Middle V value
-        pattern.extend([y1, u, y2, v])
-    
-    # Write pattern to memory map
-    mm.seek(0)
-    mm.write(bytes(pattern[:length]))
-    mm.seek(0)
-
-def fill_buffer_with_test_pattern(mm, width, height):
+def generate_test_pattern(mm, width, height):
     """Fill buffer with a test pattern (simple grayscale gradient)"""
     # YUYV format: 2 pixels per 4 bytes (Y1 U Y2 V)
     pattern = bytearray()
@@ -725,7 +708,7 @@ def stream_off(fd):
         print(f"Failed to stop stream: {e}")
         return False
 
-def handle_streamon_event(fd, event):
+def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
     print("Handling STREAMON event")
     global buffers  # Access the global buffers list
@@ -737,7 +720,7 @@ def handle_streamon_event(fd, event):
             return True
     return False
 
-def handle_streamoff_event(fd, event):
+def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
     print("Handling STREAMOFF event")
     return stream_off(fd)
