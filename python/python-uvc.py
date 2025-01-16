@@ -467,18 +467,23 @@ def handle_streamon_event(event):
     print("UVC_EVENT_STREAMON")
     
     # Start the video stream
-    buf_type = v4l2_buf_type(V4L2_BUF_TYPE_VIDEO_OUTPUT)
     try:
+        # Create a C-type integer for the buffer type
+        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
         
         # Queue initial buffers
         for buf in buffers:
-            # Fill buffer with test pattern or actual video data
+            # Fill buffer with test pattern
             generate_test_pattern(buf['mmap'], buf['length'])
             
-            v4l2_buf = buf['buffer']
+            v4l2_buf = v4l2_buffer()
+            v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+            v4l2_buf.memory = V4L2_MEMORY_MMAP
+            v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = buf['length']
+            
             fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
             
     except Exception as e:
