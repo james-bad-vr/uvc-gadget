@@ -389,14 +389,14 @@ def init_streaming_control(ctrl):
     ctrl.bMaxVersion = 1
 
 def set_video_format(fd):
-    """Set video format to YUYV 1920x1080"""
+    """Set video format to YUYV 640x360"""
     print("\nSetting video format")
     global current_format
     
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.fmt.pix.width = 1920
-    fmt.fmt.pix.height = 1080
+    fmt.fmt.pix.width = 640
+    fmt.fmt.pix.height = 360
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
     fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
@@ -547,78 +547,153 @@ def streaming_thread(fps):
     frame_count = 0
     interval = 1.0 / fps
     next_frame_time = time.time()
+    start_time = time.time()
     
+    print(f"\nStreaming configuration:")
+    print(f"  Target FPS: {fps}")
+    print(f"  Frame interval: {interval:.6f} seconds")
+    print(f"  Buffer count: {len(buffers)}")
+    print(f"  Resolution: {current_format.width}x{current_format.height}")
+    print(f"  Pixel format: {hex(current_format.pixelformat)}")
+    print(f"  Buffer size: {current_format.sizeimage} bytes")
+    
+    # Create a poll object for monitoring buffer availability
     poll = select.epoll()
-    poll.register(fd, select.EPOLLOUT | select.EPOLLIN)
+    poll.register(fd, select.EPOLLOUT)
+    print("\nRegistered fd for EPOLLOUT events")
+    
+    # Queue all initial buffers
+    print("\nQueuing initial buffers:")
+    for buf_info in buffers:
+        v4l2_buf = v4l2_buffer()
+        v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+        v4l2_buf.memory = V4L2_MEMORY_MMAP
+        v4l2_buf.index = buf_info['index']
+        
+        # Generate initial pattern
+        print(f"\n  Buffer {buf_info['index']}:")
+        print(f"    Memory address: {buf_info['mmap']}")
+        print(f"    Size: {buf_info['length']} bytes")
+        
+        bytes_used = generate_test_pattern(
+            buf_info['mmap'],
+            current_format.width,
+            current_format.height,
+            offset=frame_count
+        )
+        v4l2_buf.bytesused = bytes_used
+        
+        try:
+            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+            print(f"    Successfully queued with {bytes_used} bytes")
+        except Exception as e:
+            print(f"    Failed to queue: {e}")
+            print(f"    Error details: {type(e).__name__}")
+    
+    print(f"\nStarting frame loop with {interval:.3f}s interval ({fps} fps)")
+    last_stats_time = time.time()
+    frames_since_stats = 0
     
     while state.streaming:
         try:
             current_time = time.time()
             
-            # Wait for buffer to be available with timeout
-            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
+            # Print periodic statistics
+            if current_time - last_stats_time >= 1.0:  # Every second
+                actual_fps = frames_since_stats / (current_time - last_stats_time)
+                elapsed = current_time - start_time
+                print(f"\nStreaming stats:")
+                print(f"  Elapsed time: {elapsed:.1f} seconds")
+                print(f"  Total frames: {frame_count}")
+                print(f"  Current FPS: {actual_fps:.1f}")
+                print(f"  Target FPS: {fps}")
+                print(f"  Frame interval: {interval:.3f}s")
+                print(f"  Time drift: {(current_time - next_frame_time):.3f}s")
+                
+                last_stats_time = current_time
+                frames_since_stats = 0
+            
+            # Wait for buffer with timeout
+            events = poll.poll(0)  # Non-blocking poll
             if not events:
+                sleep_time = max(0, next_frame_time - time.time())
+                if sleep_time > 0:
+                    time.sleep(min(sleep_time, interval/10))
+                    print(f"  Sleeping for {sleep_time:.6f}s")
                 continue
             
-            # Calculate time until next frame
-            sleep_time = next_frame_time - current_time
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            
-            print(f"\nFrame {frame_count}: Processing...")
-            
-            # Dequeue a buffer
+            # Dequeue buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
             
             try:
+                dequeue_start = time.time()
                 fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
-                print(f"Dequeued buffer {buf.index}")
+                dequeue_time = time.time() - dequeue_start
+                print(f"\nDequeued buffer {buf.index} in {dequeue_time:.6f}s")
             except OSError as e:
                 if e.errno == errno.EAGAIN:
+                    print("  Buffer not ready (EAGAIN)")
                     continue
                 raise
             
-            # Update the test pattern
+            # Update test pattern
+            pattern_start = time.time()
             buffer = buffers[buf.index]
-            print(f"Generating test pattern for frame {frame_count}...")
             bytes_used = generate_test_pattern(
-                buffer['mmap'], 
-                current_format.width, 
+                buffer['mmap'],
+                current_format.width,
                 current_format.height,
                 offset=frame_count
             )
-            print(f"Generated pattern with {bytes_used} bytes")
+            pattern_time = time.time() - pattern_start
+            print(f"Generated pattern in {pattern_time:.6f}s")
             
-            # Set buffer timestamp
+            # Update buffer and queue it back
+            buf.bytesused = bytes_used
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
-            buf.bytesused = bytes_used
             
-            # Queue the buffer back
             try:
+                queue_start = time.time()
                 fcntl.ioctl(fd, VIDIOC_QBUF, buf)
-                print(f"Buffer {buf.index} queued successfully")
+                queue_time = time.time() - queue_start
+                print(f"Queued buffer in {queue_time:.6f}s")
+                
                 frame_count += 1
-                next_frame_time = current_time + interval
+                frames_since_stats += 1
+                
+                # Calculate next frame time
+                next_frame_time += interval
+                if next_frame_time < current_time:
+                    behind_by = current_time - next_frame_time
+                    print(f"Warning: Falling behind by {behind_by:.3f}s")
+                    next_frame_time = current_time + interval
+                
             except OSError as e:
                 if e.errno != errno.EAGAIN:
                     raise
+                print(f"Failed to queue buffer: EAGAIN")
                     
         except Exception as e:
-            if not state.streaming:  # Expected when stopping
+            if not state.streaming:
                 print("Streaming stopped normally")
                 break
-            print(f"Streaming error: {e}")
-            print(f"Error details: {type(e).__name__}")
+            print(f"\nStreaming error:")
+            print(f"  Error type: {type(e).__name__}")
+            print(f"  Error message: {str(e)}")
             if isinstance(e, OSError):
-                print(f"Error number: {e.errno}")
+                print(f"  Error number: {e.errno}")
             break
             
     poll.unregister(fd)
     poll.close()
-    print("Streaming thread ended")
+    print("\nStreaming thread ended")
+    print(f"Final statistics:")
+    print(f"  Total frames: {frame_count}")
+    print(f"  Total time: {time.time() - start_time:.1f} seconds")
+    print(f"  Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Fill buffer with a moving test pattern"""
@@ -935,78 +1010,153 @@ def streaming_thread(fps):
     frame_count = 0
     interval = 1.0 / fps
     next_frame_time = time.time()
+    start_time = time.time()
     
+    print(f"\nStreaming configuration:")
+    print(f"  Target FPS: {fps}")
+    print(f"  Frame interval: {interval:.6f} seconds")
+    print(f"  Buffer count: {len(buffers)}")
+    print(f"  Resolution: {current_format.width}x{current_format.height}")
+    print(f"  Pixel format: {hex(current_format.pixelformat)}")
+    print(f"  Buffer size: {current_format.sizeimage} bytes")
+    
+    # Create a poll object for monitoring buffer availability
     poll = select.epoll()
-    poll.register(fd, select.EPOLLOUT | select.EPOLLIN)
+    poll.register(fd, select.EPOLLOUT)
+    print("\nRegistered fd for EPOLLOUT events")
+    
+    # Queue all initial buffers
+    print("\nQueuing initial buffers:")
+    for buf_info in buffers:
+        v4l2_buf = v4l2_buffer()
+        v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+        v4l2_buf.memory = V4L2_MEMORY_MMAP
+        v4l2_buf.index = buf_info['index']
+        
+        # Generate initial pattern
+        print(f"\n  Buffer {buf_info['index']}:")
+        print(f"    Memory address: {buf_info['mmap']}")
+        print(f"    Size: {buf_info['length']} bytes")
+        
+        bytes_used = generate_test_pattern(
+            buf_info['mmap'],
+            current_format.width,
+            current_format.height,
+            offset=frame_count
+        )
+        v4l2_buf.bytesused = bytes_used
+        
+        try:
+            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+            print(f"    Successfully queued with {bytes_used} bytes")
+        except Exception as e:
+            print(f"    Failed to queue: {e}")
+            print(f"    Error details: {type(e).__name__}")
+    
+    print(f"\nStarting frame loop with {interval:.3f}s interval ({fps} fps)")
+    last_stats_time = time.time()
+    frames_since_stats = 0
     
     while state.streaming:
         try:
             current_time = time.time()
             
-            # Wait for buffer to be available with timeout
-            events = poll.poll(int(interval * 1000))  # Convert to milliseconds
+            # Print periodic statistics
+            if current_time - last_stats_time >= 1.0:  # Every second
+                actual_fps = frames_since_stats / (current_time - last_stats_time)
+                elapsed = current_time - start_time
+                print(f"\nStreaming stats:")
+                print(f"  Elapsed time: {elapsed:.1f} seconds")
+                print(f"  Total frames: {frame_count}")
+                print(f"  Current FPS: {actual_fps:.1f}")
+                print(f"  Target FPS: {fps}")
+                print(f"  Frame interval: {interval:.3f}s")
+                print(f"  Time drift: {(current_time - next_frame_time):.3f}s")
+                
+                last_stats_time = current_time
+                frames_since_stats = 0
+            
+            # Wait for buffer with timeout
+            events = poll.poll(0)  # Non-blocking poll
             if not events:
+                sleep_time = max(0, next_frame_time - time.time())
+                if sleep_time > 0:
+                    time.sleep(min(sleep_time, interval/10))
+                    print(f"  Sleeping for {sleep_time:.6f}s")
                 continue
             
-            # Calculate time until next frame
-            sleep_time = next_frame_time - current_time
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            
-            print(f"\nFrame {frame_count}: Processing...")
-            
-            # Dequeue a buffer
+            # Dequeue buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
             
             try:
+                dequeue_start = time.time()
                 fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
-                print(f"Dequeued buffer {buf.index}")
+                dequeue_time = time.time() - dequeue_start
+                print(f"\nDequeued buffer {buf.index} in {dequeue_time:.6f}s")
             except OSError as e:
                 if e.errno == errno.EAGAIN:
+                    print("  Buffer not ready (EAGAIN)")
                     continue
                 raise
             
-            # Update the test pattern
+            # Update test pattern
+            pattern_start = time.time()
             buffer = buffers[buf.index]
-            print(f"Generating test pattern for frame {frame_count}...")
             bytes_used = generate_test_pattern(
-                buffer['mmap'], 
-                current_format.width, 
+                buffer['mmap'],
+                current_format.width,
                 current_format.height,
                 offset=frame_count
             )
-            print(f"Generated pattern with {bytes_used} bytes")
+            pattern_time = time.time() - pattern_start
+            print(f"Generated pattern in {pattern_time:.6f}s")
             
-            # Set buffer timestamp
+            # Update buffer and queue it back
+            buf.bytesused = bytes_used
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
-            buf.bytesused = bytes_used
             
-            # Queue the buffer back
             try:
+                queue_start = time.time()
                 fcntl.ioctl(fd, VIDIOC_QBUF, buf)
-                print(f"Buffer {buf.index} queued successfully")
+                queue_time = time.time() - queue_start
+                print(f"Queued buffer in {queue_time:.6f}s")
+                
                 frame_count += 1
-                next_frame_time = current_time + interval
+                frames_since_stats += 1
+                
+                # Calculate next frame time
+                next_frame_time += interval
+                if next_frame_time < current_time:
+                    behind_by = current_time - next_frame_time
+                    print(f"Warning: Falling behind by {behind_by:.3f}s")
+                    next_frame_time = current_time + interval
+                
             except OSError as e:
                 if e.errno != errno.EAGAIN:
                     raise
+                print(f"Failed to queue buffer: EAGAIN")
                     
         except Exception as e:
-            if not state.streaming:  # Expected when stopping
+            if not state.streaming:
                 print("Streaming stopped normally")
                 break
-            print(f"Streaming error: {e}")
-            print(f"Error details: {type(e).__name__}")
+            print(f"\nStreaming error:")
+            print(f"  Error type: {type(e).__name__}")
+            print(f"  Error message: {str(e)}")
             if isinstance(e, OSError):
-                print(f"Error number: {e.errno}")
+                print(f"  Error number: {e.errno}")
             break
             
     poll.unregister(fd)
     poll.close()
-    print("Streaming thread ended")
+    print("\nStreaming thread ended")
+    print(f"Final statistics:")
+    print(f"  Total frames: {frame_count}")
+    print(f"  Total time: {time.time() - start_time:.1f} seconds")
+    print(f"  Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Fill buffer with a moving test pattern"""
