@@ -520,7 +520,9 @@ def handle_streamon_event(event):
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
-        threading.Thread(target=streaming_thread, daemon=True).start()
+        thread = threading.Thread(target=streaming_thread, daemon=True)
+        thread.start()
+        print("Streaming thread started with ID:", thread.ident)
             
     except Exception as e:
         print(f"Failed to start stream: {e}")
@@ -534,11 +536,12 @@ def streaming_thread():
     frame_count = 0
     while state.streaming:
         try:
+            print(f"\nFrame {frame_count}: Processing...")
             # Dequeue a buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
-            print(f"\nTrying to dequeue buffer...")
+            print(f"Trying to dequeue buffer...")
             fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
             print(f"Dequeued buffer {buf.index}")
             
@@ -549,7 +552,7 @@ def streaming_thread():
                 buffer['mmap'], 
                 current_format.width, 
                 current_format.height,
-                offset=frame_count % 255  # Create moving pattern
+                offset=frame_count  # Use frame_count directly for more noticeable movement
             )
             print(f"Generated pattern with {bytes_used} bytes")
             
@@ -560,7 +563,6 @@ def streaming_thread():
             print(f"Buffer {buf.index} queued successfully")
             
             frame_count += 1
-            time.sleep(1/30)  # Cap at 30fps
             
         except Exception as e:
             if not state.streaming:  # Expected when stopping
@@ -579,8 +581,8 @@ def generate_test_pattern(mm, width, height, offset=0):
     
     pattern = bytearray()
     bytes_per_line = width * 2  # 2 bytes per pixel for YUYV
-    square_size = 32  # Size of each square in pixels
-    horizontal_offset = offset % (square_size * 2)
+    square_size = 64  # Larger squares to make pattern more visible
+    horizontal_offset = offset % width  # Full width movement
     
     print(f"  Bytes per line: {bytes_per_line}")
     print(f"  Square size: {square_size}")
@@ -594,7 +596,7 @@ def generate_test_pattern(mm, width, height, offset=0):
             # Create checkerboard pattern
             is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
-
+            
             # Write 4 bytes (2 pixels) of YUYV data
             pattern.extend(color.to_bytes(4, byteorder='little'))
 
@@ -602,6 +604,7 @@ def generate_test_pattern(mm, width, height, offset=0):
         mm.seek(0)
         mm.write(pattern)
         print(f"  Successfully wrote {len(pattern)} bytes to buffer")
+        mm.flush()  # Ensure data is written to the device
     except Exception as e:
         print(f"Error writing to memory map: {e}")
         print(f"Error details: {type(e).__name__}")
@@ -865,7 +868,9 @@ def handle_streamon_event(event):
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
-        threading.Thread(target=streaming_thread, daemon=True).start()
+        thread = threading.Thread(target=streaming_thread, daemon=True)
+        thread.start()
+        print("Streaming thread started with ID:", thread.ident)
             
     except Exception as e:
         print(f"Failed to start stream: {e}")
