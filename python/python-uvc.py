@@ -473,18 +473,25 @@ def handle_streamon_event(event):
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
         
+        if not current_format:
+            print("Error: No video format set")
+            return None
+            
+        print(f"Current format: {current_format.width}x{current_format.height}")
+        
         # Queue initial buffers
         for buf in buffers:
             # Fill buffer with test pattern
-            generate_test_pattern(buf['mmap'], buf['length'])
+            bytes_used = generate_test_pattern(buf['mmap'], current_format.width, current_format.height)
             
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
-            v4l2_buf.bytesused = buf['length']
+            v4l2_buf.bytesused = bytes_used
             
             fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+            print(f"Queued buffer {buf['index']}")
             
     except Exception as e:
         print(f"Failed to start stream: {e}")
