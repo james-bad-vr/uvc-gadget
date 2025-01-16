@@ -72,6 +72,11 @@ V4L2_MEMORY_DMABUF = 4
 
 V4L2_BUF_TYPE_VIDEO_OUTPUT = 2
 V4L2_BUF_TYPE_VIDEO_CAPTURE = 1
+V4L2_BUF_TYPE_VIDEO_OVERLAY = 3
+V4L2_BUF_TYPE_VBI_CAPTURE = 4
+V4L2_BUF_TYPE_VBI_OUTPUT = 5
+V4L2_BUF_TYPE_SLICED_VBI_CAPTURE = 6
+V4L2_BUF_TYPE_SLICED_VBI_OUTPUT = 7
 
 class v4l2_capability(Structure):
     _fields_ = [
@@ -249,6 +254,10 @@ class DeviceState:
 
 state = DeviceState()
 
+# Add these global variables at the top of the file
+buffers = None
+current_format = None
+
 def main():
     """Main program loop"""
     global fd, buffers  # Make these global so event handlers can access them
@@ -341,24 +350,26 @@ def init_streaming_control(ctrl):
     ctrl.bMaxVersion = 1
 
 def set_video_format(fd):
-    """Set the video format on the device"""
+    """Set video format to YUYV 1920x1080"""
+    global current_format
+    
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.u.fmt.pix.width = 640
-    fmt.u.fmt.pix.height = 360
-    fmt.u.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
-    fmt.u.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.u.fmt.pix.sizeimage = 640 * 360 * 2
-    fmt.u.fmt.pix.bytesperline = 640 * 2
+    fmt.fmt.pix.width = 1920
+    fmt.fmt.pix.height = 1080
+    fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
+    fmt.fmt.pix.field = V4L2_FIELD_NONE
+    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2
+    fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     
     try:
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
         print("Video format set successfully")
-        state.format_set = True
-        return 0
+        current_format = fmt.fmt.pix  # Store the current format
+        return True
     except Exception as e:
         print(f"Failed to set video format: {e}")
-        return -1
+        return False
 
 def handle_request(fd, ctrl, req, response):
     print(f"Handling bRequest: 0x{req.bRequest:02x}")
@@ -577,6 +588,47 @@ def generate_test_pattern(mm, length):
     mm.write(bytes(pattern[:length]))
     mm.seek(0)
 
+def fill_buffer_with_test_pattern(mm, width, height):
+    """Fill buffer with a test pattern (simple grayscale gradient)"""
+    # YUYV format: 2 pixels per 4 bytes (Y1 U Y2 V)
+    pattern = bytearray()
+    for y in range(height):
+        for x in range(0, width, 2):
+            # Y1: grayscale gradient
+            y1 = int((x / width) * 255)
+            # U: constant
+            u = 128
+            # Y2: grayscale gradient
+            y2 = int(((x + 1) / width) * 255)
+            # V: constant
+            v = 128
+            pattern.extend([y1, u, y2, v])
+    
+    # Write pattern to mmap buffer
+    mm.write(pattern)
+    return len(pattern)
+
+def queue_initial_buffers(fd, buffers, width, height):
+    """Queue initial buffers with test pattern"""
+    for buf in buffers:
+        # Fill buffer with test pattern
+        bytes_used = fill_buffer_with_test_pattern(buf['mmap'], width, height)
+        
+        # Queue the buffer
+        v4l2_buf = v4l2_buffer()
+        v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+        v4l2_buf.memory = V4L2_MEMORY_MMAP
+        v4l2_buf.index = buf['index']
+        v4l2_buf.bytesused = bytes_used
+        
+        try:
+            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+            print(f"Queued buffer {buf['index']}")
+        except Exception as e:
+            print(f"Failed to queue buffer {buf['index']}: {e}")
+            return False
+    return True
+
 EVENT_HANDLERS = {
     UVC_EVENT_CONNECT: handle_connect_event,
     UVC_EVENT_DISCONNECT: handle_disconnect_event,
@@ -606,6 +658,45 @@ def subscribe_events(fd):
             print(f"Failed to subscribe to event 0x{event_type:08x}: {e}")
             return -1
     return 0
+
+def stream_on(fd):
+    """Start video streaming"""
+    buf_type = c_int(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+    try:
+        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        print("Stream ON successful")
+        return True
+    except Exception as e:
+        print(f"Failed to start stream: {e}")
+        return False
+
+def stream_off(fd):
+    """Stop video streaming"""
+    buf_type = c_int(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+    try:
+        fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
+        print("Stream OFF successful")
+        return True
+    except Exception as e:
+        print(f"Failed to stop stream: {e}")
+        return False
+
+def handle_streamon_event(fd, event):
+    """Handle UVC_EVENT_STREAMON"""
+    print("Handling STREAMON event")
+    global buffers  # Access the global buffers list
+    
+    if stream_on(fd):
+        # Queue initial buffers with test pattern
+        if queue_initial_buffers(fd, buffers, current_format.width, current_format.height):
+            print("Successfully queued initial buffers")
+            return True
+    return False
+
+def handle_streamoff_event(fd, event):
+    """Handle UVC_EVENT_STREAMOFF"""
+    print("Handling STREAMOFF event")
+    return stream_off(fd)
 
 if __name__ == "__main__":
     main()
