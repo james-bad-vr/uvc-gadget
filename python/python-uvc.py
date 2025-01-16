@@ -11,6 +11,7 @@ from ctypes import (
     sizeof, addressof, pointer, cast, POINTER, create_string_buffer,
     memmove, memset
 )
+import mmap
 
 print(f"System endianness: {sys.byteorder}")
 
@@ -173,6 +174,22 @@ class v4l2_format(Structure):
         ('u', _u)
     ]
 
+class v4l2_requestbuffers(Structure):
+    _fields_ = [
+        ('count', c_uint32),
+        ('type', c_uint32),
+        ('memory', c_uint32),
+    ]
+
+class v4l2_buffer(Structure):
+    _fields_ = [
+        ('index', c_uint32),
+        ('type', c_uint32),
+        ('bytesused', c_uint32),
+        ('flags', c_uint32),
+        ('reserved', c_uint32 * 4)
+    ]
+
 # Global state
 class DeviceState:
     def __init__(self):
@@ -187,6 +204,10 @@ state = DeviceState()
 
 def main():
     """Main program loop"""
+    global fd, buffers  # Make these global so event handlers can access them
+    fd = None
+    buffers = None
+    
     try:
         device_path = "/dev/video0"
         print(f"Opening {device_path}")
@@ -201,6 +222,14 @@ def main():
         if set_video_format(fd) < 0:
             print("Failed to set video format")
             return
+        
+        # Initialize video buffers
+        buffers = init_video_buffers(fd)
+        if not buffers:
+            print("Failed to initialize video buffers")
+            return
+            
+        print(f"Initialized {len(buffers)} video buffers")
         
         # Subscribe to all events
         if subscribe_events(fd) < 0:
@@ -238,8 +267,12 @@ def main():
     except KeyboardInterrupt:
         print("\nExiting...")
     finally:
-        os.close(fd)
-        print("Device closed")
+        if buffers:
+            for buf in buffers:
+                buf['mmap'].close()
+        if fd is not None:
+            print("Device closed")
+            os.close(fd)
 
 def init_streaming_control(ctrl):
     """Initialize streaming control with default values"""
@@ -333,8 +366,27 @@ def handle_disconnect_event(event):
     return None
 
 def handle_streamon_event(event):
+    """Handle stream on event"""
     print("UVC_EVENT_STREAMON")
-    state.streaming = True
+    
+    # Start the video stream
+    buf_type = v4l2_buf_type(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+    try:
+        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        print("Stream started successfully")
+        
+        # Queue initial buffers
+        for buf in buffers:
+            # Fill buffer with test pattern or actual video data
+            generate_test_pattern(buf['mmap'], buf['length'])
+            
+            v4l2_buf = buf['buffer']
+            v4l2_buf.bytesused = buf['length']
+            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+            
+    except Exception as e:
+        print(f"Failed to start stream: {e}")
+    
     return None
 
 def handle_streamoff_event(event):
@@ -406,13 +458,71 @@ def handle_data_event(event):
     state.current_control = None
     return None
 
+def init_video_buffers(fd):
+    """Initialize video buffers"""
+    # Request buffers
+    req = v4l2_requestbuffers()
+    req.count = 4  # Number of buffers to allocate
+    req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+    req.memory = V4L2_MEMORY_MMAP
+    
+    try:
+        fcntl.ioctl(fd, VIDIOC_REQBUFS, req)
+    except Exception as e:
+        print(f"Failed to request buffers: {e}")
+        return None
+    
+    # Map the buffers
+    buffers = []
+    for i in range(req.count):
+        buf = v4l2_buffer()
+        buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
+        buf.memory = V4L2_MEMORY_MMAP
+        buf.index = i
+        
+        try:
+            fcntl.ioctl(fd, VIDIOC_QUERYBUF, buf)
+        except Exception as e:
+            print(f"Failed to query buffer {i}: {e}")
+            return None
+            
+        mm = mmap.mmap(fd, buf.length, 
+                      flags=mmap.MAP_SHARED,
+                      prot=mmap.PROT_READ | mmap.PROT_WRITE,
+                      offset=buf.m.offset)
+        
+        buffers.append({
+            'buffer': buf,
+            'mmap': mm,
+            'length': buf.length
+        })
+    
+    return buffers
+
+def generate_test_pattern(mm, length):
+    """Generate a simple test pattern"""
+    # Create a simple color bar pattern
+    pattern = bytearray()
+    for i in range(0, length, 4):
+        # YUYV format: Y1 U Y2 V
+        y1 = (i // 4) % 256  # Varying luminance
+        u = 128  # Middle U value
+        y2 = y1  # Same luminance for adjacent pixels
+        v = 128  # Middle V value
+        pattern.extend([y1, u, y2, v])
+    
+    # Write pattern to memory map
+    mm.seek(0)
+    mm.write(bytes(pattern[:length]))
+    mm.seek(0)
+
 EVENT_HANDLERS = {
     UVC_EVENT_CONNECT: handle_connect_event,
     UVC_EVENT_DISCONNECT: handle_disconnect_event,
-    UVC_EVENT_STREAMON: handle_streamon_event,
-    UVC_EVENT_STREAMOFF: handle_streamoff_event,
     UVC_EVENT_SETUP: handle_setup_event,
     UVC_EVENT_DATA: handle_data_event,
+    UVC_EVENT_STREAMON: handle_streamon_event,
+    UVC_EVENT_STREAMOFF: handle_streamoff_event,
 }
 
 def subscribe_events(fd):
