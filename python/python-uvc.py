@@ -191,14 +191,16 @@ class v4l2_pix_format(Structure):
         ('xfer_func', c_uint32),
     ]
 
+class v4l2_format_union(Union):
+    _fields_ = [
+        ('pix', v4l2_pix_format),
+        ('raw_data', c_uint8 * 200),  # Ensure union is large enough
+    ]
+
 class v4l2_format(Structure):
-    class _u(Union):
-        class _fmt(Structure):
-            _fields_ = [('pix', v4l2_pix_format)]
-        _fields_ = [('fmt', _fmt)]
     _fields_ = [
         ('type', c_uint32),
-        ('u', _u)
+        ('fmt', v4l2_format_union),
     ]
 
 class v4l2_requestbuffers(Structure):
@@ -359,8 +361,9 @@ def set_video_format(fd):
     fmt.fmt.pix.height = 1080
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2
+    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
     fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
+    fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
     
     try:
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
