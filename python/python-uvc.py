@@ -602,12 +602,12 @@ def generate_test_pattern(mm, width, height, offset=0):
 
     try:
         mm.seek(0)
-        mm.write(pattern)
+        mm.write(bytes(pattern))  # Convert bytearray to bytes before writing
         print(f"  Successfully wrote {len(pattern)} bytes to buffer")
-        mm.flush()  # Ensure data is written to the device
     except Exception as e:
         print(f"Error writing to memory map: {e}")
         print(f"Error details: {type(e).__name__}")
+        raise  # Re-raise the exception to see where it's happening
         
     return len(pattern)
 
