@@ -653,11 +653,11 @@ def handle_setup_event(event):
     
     # Log raw event data
     print("Raw event data (first 16 bytes):")
-    raw_data = bytes(event.u.data.data[:16])
+    raw_data = bytes(event.u.data.data[:16])  # Convert list to bytes
     print(' '.join(f'{b:02x}' for b in raw_data))
     
-    # Parse request
-    req = usb_ctrlrequest.from_buffer_copy(event.u.data.data[:8])
+    # Parse request - Fix: convert list to bytes first
+    req = usb_ctrlrequest.from_buffer_copy(bytes(event.u.data.data[:8]))
     response = uvc_request_data()
     response.length = -errno.EL2HLT
     
