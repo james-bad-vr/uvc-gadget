@@ -115,6 +115,32 @@ V4L2_QUANTIZATION_LIM_RANGE = 2
 WHITE = 0x80eb80eb
 GRAY = 0x807F7F7F
 
+# Add these constants at the top with your other constants
+UVC_RC_UNDEFINED = 0x00
+UVC_SET_CUR = 0x01
+UVC_GET_CUR = 0x81
+UVC_GET_MIN = 0x82
+UVC_GET_MAX = 0x83
+UVC_GET_RES = 0x84
+UVC_GET_LEN = 0x85
+UVC_GET_INFO = 0x86
+UVC_GET_DEF = 0x87
+
+# Add this lookup table and function
+UVC_REQUEST_NAMES = {
+    UVC_RC_UNDEFINED: "UNDEFINED",
+    UVC_SET_CUR: "SET_CUR",
+    UVC_GET_CUR: "GET_CUR",
+    UVC_GET_MIN: "GET_MIN",
+    UVC_GET_MAX: "GET_MAX",
+    UVC_GET_RES: "GET_RES",
+    UVC_GET_LEN: "GET_LEN",
+    UVC_GET_INFO: "GET_INFO",
+    UVC_GET_DEF: "GET_DEF",
+}
+
+
+
 class v4l2_capability(Structure):
     _fields_ = [
         ("driver", c_char * 16),
@@ -368,6 +394,10 @@ def main():
         if fd is not None:
             print("Device closed")
             os.close(fd)
+            
+def uvc_request_name(req):
+    """Convert a UVC request code to a readable string"""
+    return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
 def init_streaming_control(ctrl):
     """Initialize streaming control with default values"""
