@@ -647,49 +647,119 @@ def handle_streamoff_event(event):
     return stream_off(fd)
 
 def handle_setup_event(event):
-    print("\nUVC_EVENT_SETUP")
-    print("Raw event data (first 8 bytes):")
-    # Print the first 8 bytes of raw data
-    raw_data = bytes(event.u.data.data[:8])
+    print("\n" + "="*50)
+    print("UVC_EVENT_SETUP")
+    print("="*50)
+    
+    # Log raw event data
+    print("Raw event data (first 16 bytes):")
+    raw_data = bytes(event.u.data.data[:16])
     print(' '.join(f'{b:02x}' for b in raw_data))
     
-    # Create request struct from the first 8 bytes of event data
-    req = usb_ctrlrequest.from_buffer_copy(raw_data)
+    # Parse request
+    req = usb_ctrlrequest.from_buffer_copy(event.u.data.data[:8])
     response = uvc_request_data()
     response.length = -errno.EL2HLT
-
-    print(f"Setup Request:")
-    print(f"  bmRequestType: 0x{req.bRequestType:02x}")
-    print(f"  bRequest: 0x{req.bRequest:02x}")
-    print(f"  wValue: 0x{req.wValue:04x}")
-    print(f"  wIndex: 0x{req.wIndex:04x}")
-    print(f"  wLength: {req.wLength}")
-
-    # Extract control selector from wValue
-    cs = (req.wValue >> 8) & 0xFF
-    print(f"  Control Selector: 0x{cs:02x}")
-    print(f"Checking if cs (0x{cs:02x}) is in [{UVC_VS_PROBE_CONTROL}, {UVC_VS_COMMIT_CONTROL}]")
     
-    if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
-        print(f"Control selector matched! cs=0x{cs:02x}")
-        ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
-        print(f"Request type: 0x{req.bRequestType:02x}")
-
-        if req.bRequestType & USB_TYPE_MASK == USB_TYPE_CLASS:  # Check if it's a class request
-            if req.bRequestType & 0x80:  # GET
-                print("  Handling GET request")
-                handle_request(None, ctrl, req, response)
-            else:  # SET
-                print("  Handling SET request")
+    # Log request details
+    print("\nRequest Details:")
+    print(f"  bmRequestType: 0x{req.bRequestType:02x}")
+    print(f"  bRequest:      0x{req.bRequest:02x} ({uvc_request_name(req.bRequest)})")
+    print(f"  wValue:        0x{req.wValue:04x}")
+    print(f"  wIndex:        0x{req.wIndex:04x}")
+    print(f"  wLength:       {req.wLength}")
+    
+    # Parse request type
+    request_type = req.bRequestType & USB_TYPE_MASK
+    print(f"\nRequest Type: 0x{request_type:02x} " + 
+          f"({'Class' if request_type == USB_TYPE_CLASS else 'Standard'})")
+    
+    # Check if it's a class request
+    if request_type == USB_TYPE_CLASS:
+        cs = (req.wValue >> 8) & 0xFF
+        interface = req.wIndex & 0xFF
+        
+        print(f"\nClass-specific request:")
+        print(f"  Control Selector: 0x{cs:02x}")
+        print(f"  Interface:        {interface}")
+        
+        # Handle streaming interface requests
+        if interface == 1:  # Streaming interface
+            print("\nHandling Streaming Interface Request")
+            
+            if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
+                print(f"  Control: {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
+                ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
+                
                 if req.bRequest == UVC_SET_CUR:
-                    print(f"  -> SET_CUR request for {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
+                    print("  Operation: SET_CUR")
+                    print("  -> Setting current_control and preparing for DATA phase")
                     state.current_control = cs
+                    response.length = 34  # Match C code exactly
+                    
+                elif req.bRequest == UVC_GET_CUR:
+                    print("  Operation: GET_CUR")
+                    print("  -> Returning current control values")
+                    memmove(addressof(response.data), addressof(ctrl), 
+                           sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_MIN:
+                    print("  Operation: GET_MIN")
+                    print("  -> Returning minimum supported values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl, min=True)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_MAX:
+                    print("  Operation: GET_MAX")
+                    print("  -> Returning maximum supported values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl, max=True)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_RES:
+                    print("  Operation: GET_RES")
+                    print("  -> Returning resolution values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_INFO:
+                    print("  Operation: GET_INFO")
+                    print("  -> Returning capabilities (0x03: GET/SET supported)")
+                    response.data[0] = 0x03
+                    response.length = 1
+                    
+                elif req.bRequest == UVC_GET_DEF:
+                    print("  Operation: GET_DEF")
+                    print("  -> Returning default values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                
+                print(f"\nResponse prepared:")
+                print(f"  Length: {response.length}")
+                if response.length > 0:
+                    print("  Data (first 16 bytes):")
+                    resp_data = bytes(response.data[:min(16, response.length)])
+                    print('  ' + ' '.join(f'{b:02x}' for b in resp_data))
+            else:
+                print(f"  Warning: Unhandled control selector: 0x{cs:02x}")
+        else:
+            print(f"  Warning: Unhandled interface: {interface}")
     else:
-        print(f"Control selector 0x{cs:02x} did not match expected values")
-        # For debugging, let's print the expected values
-        print(f"Expected values: PROBE=0x{UVC_VS_PROBE_CONTROL:02x}, COMMIT=0x{UVC_VS_COMMIT_CONTROL:02x}")
-
+        print("  Warning: Non-class request not handled")
+    
+    print("="*50 + "\n")
     return response
 
 
