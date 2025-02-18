@@ -399,24 +399,33 @@ def uvc_request_name(req):
     """Convert a UVC request code to a readable string"""
     return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
-def init_streaming_control(ctrl):
-    """Initialize streaming control with default values"""
+def init_streaming_control(ctrl, mode='default'):
+    """Initialize streaming control with exact same values as C code"""
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
-    ctrl.dwFrameInterval = 333333  # 30 fps
+    
+    # Set frame interval based on mode
+    if mode == 'min':
+        ctrl.dwFrameInterval = 500000  # Slowest frame rate
+    elif mode == 'max':
+        ctrl.dwFrameInterval = 166666  # Fastest frame rate
+    else:
+        ctrl.dwFrameInterval = 333333  # Default 30fps
+        
     ctrl.wKeyFrameRate = 0
     ctrl.wPFrameRate = 0
     ctrl.wCompQuality = 0
     ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2
-    ctrl.dwMaxPayloadTransferSize = 3072
+    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
+    ctrl.dwMaxPayloadTransferSize = 2048  # Match C code exactly
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
     ctrl.bPreferedVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
+
 
 def set_video_format(fd):
     """Set video format to YUYV 640x360"""
@@ -716,16 +725,10 @@ def handle_setup_event(event):
         # Handle control interface requests (interface 0)
         if interface == 0:
             print("\nHandling Control Interface Request")
-            if req.bRequest == UVC_GET_INFO:
-                print("  Operation: GET_INFO")
-                print("  -> Returning capabilities (0x03: GET/SET supported)")
-                response.data[0] = 0x03
-                response.length = 1
-            elif req.bRequest == UVC_GET_CUR:
-                print("  Operation: GET_CUR for control interface")
-                response.data[0] = 0x00  # Default response
-                response.length = req.wLength
-        
+            # Always return 0x03 for GET_INFO (indicating GET/SET supported)
+            response.data[0] = 0x03
+            response.length = req.wLength
+            
         # Handle streaming interface requests (interface 1)
         elif interface == 1:
             print("\nHandling Streaming Interface Request")
@@ -747,13 +750,48 @@ def handle_setup_event(event):
                            sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
                     
-                # ... rest of the streaming handlers ...
-                
-        else:
-            print(f"  Warning: Unknown interface: {interface}")
-    else:
-        print("  Warning: Non-class request not handled")
-    
+                elif req.bRequest == UVC_GET_MIN:
+                    print("  Operation: GET_MIN")
+                    print("  -> Returning minimum supported values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl, mode='min')
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_MAX:
+                    print("  Operation: GET_MAX")
+                    print("  -> Returning maximum supported values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl, mode='max')
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_RES:
+                    print("  Operation: GET_RES")
+                    print("  -> Returning resolution values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+                    
+                elif req.bRequest == UVC_GET_INFO:
+                    print("  Operation: GET_INFO")
+                    print("  -> Returning capabilities (0x03: GET/SET supported)")
+                    response.data[0] = 0x03
+                    response.length = 1
+                    
+                elif req.bRequest == UVC_GET_DEF:
+                    print("  Operation: GET_DEF")
+                    print("  -> Returning default values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl)
+                    memmove(addressof(response.data), addressof(temp_ctrl),
+                           sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
+        
     print(f"\nResponse prepared:")
     print(f"  Length: {response.length}")
     if response.length > 0:
