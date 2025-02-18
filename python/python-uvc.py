@@ -458,6 +458,12 @@ def handle_request(fd, ctrl, req, response):
         print("-> SET_CUR request")
         # Handle specific SET_CUR logic if needed
         response.length = 0  # Acknowledge
+    elif req.bRequest == UVC_GET_RES:
+        print("-> GET_RES request")
+        temp_ctrl = uvc_streaming_control()
+        init_streaming_control(temp_ctrl)
+        memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
+        response.length = sizeof(uvc_streaming_control)
     else:
         print(f"Unhandled bRequest: 0x{req.bRequest:02x}")
 
