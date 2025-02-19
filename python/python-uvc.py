@@ -877,39 +877,11 @@ def handle_data_event(event):
 
             print("Updating video format after COMMIT...")
 
-           # Allocate memory for v4l2_pix_format and Zero It Out
-            pixfmt = v4l2_pix_format()
-            memmove(addressof(pixfmt), bytes(sizeof(v4l2_pix_format())), sizeof(v4l2_pix_format))  # Zero out memory
+              # Set video format
+            if set_video_format(fd) < 0:
+                print("Failed to set video format")
 
-            # Now assign values explicitly
-            pixfmt.width = 640  # Ensure resolution is valid
-            pixfmt.height = 360
-            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV  # YUYV format
-            pixfmt.field = V4L2_FIELD_NONE
-            pixfmt.bytesperline = pixfmt.width * 2  # 2 bytes per pixel
-            pixfmt.sizeimage = state.commit_control.dwMaxVideoFrameSize
-            pixfmt.colorspace = V4L2_COLORSPACE_SRGB
-            pixfmt.ycbcr_enc = V4L2_YCBCR_ENC_601
-            pixfmt.quantization = V4L2_QUANTIZATION_LIM_RANGE
-            pixfmt.xfer_func = V4L2_XFER_FUNC_SRGB
-
-            # Print debug info before setting format
-            print(f"📌 Attempting to set format:")
-            print(f"  Width: {pixfmt.width}")
-            print(f"  Height: {pixfmt.height}")
-            print(f"  Pixel Format: {hex(pixfmt.pixelformat)}")
-            print(f"  Bytes per line: {pixfmt.bytesperline}")
-            print(f"  Size image: {pixfmt.sizeimage}")
-
-            try:
-                fcntl.ioctl(fd, VIDIOC_S_FMT, pixfmt)
-                print(f"✅ Video format updated: {pixfmt.width}x{pixfmt.height}, {hex(pixfmt.pixelformat)}")
-            except OSError as e:
-                print(f"⚠️ Failed to update video format: {e}")
-
-            # Update Frame Rate
-            fps = int(1000000000 / state.commit_control.dwFrameInterval)
-            print(f"✅ Setting frame rate: {fps} FPS")
+          
     except Exception as e:
         print(f"Error processing control data: {e}")
         return None
