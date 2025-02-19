@@ -638,8 +638,9 @@ def streaming_thread(fps):
             # Move to next pattern
             pattern_index = (pattern_index + 1) % 8
             
-            # Queue buffer back
-            buf.bytesused = buffer['pattern_size']
+             # Ensure proper buffer size
+            buffer_size = current_format.width * current_format.height * 2
+            buf.bytesused = buffer_size  # Set exact size
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
@@ -683,7 +684,14 @@ def generate_test_pattern(mm, width, height, offset=0):
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
     print("Handling STREAMOFF event")
-    return stream_off(fd)
+    try:
+        buf_type = c_uint32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
+        state.streaming = False
+        print("Stream stopped successfully")
+    except Exception as e:
+        print(f"Failed to stop stream: {e}")
+    return None
 
 def handle_setup_event(event):
     print("\n" + "="*50)
@@ -736,6 +744,17 @@ def handle_setup_event(event):
             if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
                 print(f"  Control: {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
                 ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
+                  # Add explicit size calculations
+                ctrl.dwMaxVideoFrameSize = current_format.width * current_format.height * 2
+                ctrl.bmHint = 1
+                ctrl.bFormatIndex = 1
+                ctrl.bFrameIndex = 1
+                
+                # Ensure proper stride alignment for macOS
+                ctrl.wWidth = current_format.width
+                ctrl.wHeight = current_format.height
+                ctrl.dwMinBitRate = current_format.width * current_format.height * 16
+                ctrl.dwMaxBitRate = current_format.width * current_format.height * 16
                 
                 if req.bRequest == UVC_SET_CUR:
                     print("  Operation: SET_CUR")
@@ -1122,22 +1141,24 @@ def streaming_thread(fps):
 
 def generate_test_pattern(mm, width, height, offset=0):
     """Optimized test pattern generation"""
-    pattern = bytearray()
     bytes_per_line = width * 2
+    total_size = bytes_per_line * height
+    pattern = bytearray(total_size)  # Pre-allocate full buffer
     square_size = 64
     horizontal_offset = offset % width
     
     for y in range(height):
+        line_offset = y * bytes_per_line
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            shifted_x = (pixel_x + horizontal_offset) % width
-            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+            shifted_x = (pixel_x + offset) % width
+            is_white = ((y // 64) + (shifted_x // 64)) % 2 == 0
             color = WHITE if is_white else GRAY
-            pattern.extend(color.to_bytes(4, byteorder='little'))
+            pattern[line_offset + x:line_offset + x + 4] = color.to_bytes(4, byteorder='little')
 
     mm.seek(0)
     mm.write(bytes(pattern))
-    return len(pattern)
+    return total_size  # Return exact buffer size
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
