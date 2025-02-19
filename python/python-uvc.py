@@ -842,20 +842,16 @@ def handle_data_event(event):
         print("No current control set")
         return None
 
-    # For SET_CUR, the data comes in event.u.req
-    data = bytes(event.u.req)[:sizeof(uvc_streaming_control)]
-    data_len = len(data)
+    # The actual control data starts at offset 8 in the raw event data
+    control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
+    data_len = len(control_data)
     
     print(f"\nReceived {data_len} bytes of control data:")
-    if data_len > 0:
-        print(' '.join(f'{b:02x}' for b in data[:16]))
-    else:
-        print("Warning: No data received in DATA event")
-        return None
+    print(' '.join(f'{b:02x}' for b in control_data[:16]))
 
     try:
         # Create a new streaming control structure from the received data
-        ctrl = uvc_streaming_control.from_buffer_copy(data)
+        ctrl = uvc_streaming_control.from_buffer_copy(control_data)
 
         print("\nDEBUG - Received streaming control values:")
         print(f"  bmHint: 0x{ctrl.bmHint:04x}")
