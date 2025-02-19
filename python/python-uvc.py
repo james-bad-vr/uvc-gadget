@@ -765,6 +765,11 @@ def handle_setup_event(event):
                         print("  -> Returning COMMIT control values")
                         ctrl = state.commit_control
 
+                    print("\nDEBUG - Sending GET_CUR Response:")
+                    print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
+                    print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+                    print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
+
                     # Ensure that we return the committed values correctly
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
@@ -866,11 +871,19 @@ def handle_data_event(event):
             print(f"  Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
 
             # Ensure frame interval is copied from probe
-            state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
+            #state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
+
+             # Force dwFrameInterval to 30 FPS
+            state.commit_control.dwFrameInterval = 333333  
+
 
             print("Final COMMIT settings:")
             print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
             print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
+
+             # Manually trigger a GET_CUR (COMMIT) request after storing the data
+            print("Manually triggering GET_CUR (COMMIT) after setting values...")
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, state.commit_control)
 
     except Exception as e:
         print(f"Error processing control data: {e}")
