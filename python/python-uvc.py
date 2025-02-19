@@ -875,19 +875,27 @@ def handle_data_event(event):
                 # Ensure dwMaxPayloadTransferSize is set before GET_CUR (COMMIT)
             state.commit_control.dwMaxPayloadTransferSize = 3072  
 
-            # Properly Initialize Video Format (Mimicking the C implementation)
+            # Validate `bFormatIndex` and `bFrameIndex` before applying format
+            format_index = state.commit_control.bFormatIndex
+            frame_index = state.commit_control.bFrameIndex
+
+            if format_index < 1 or frame_index < 1:
+                print(f"⚠️ Invalid format/frame index: {format_index}, {frame_index}")
+                return None  # Stop processing if indices are invalid
+
+            # Properly Initialize Video Format
             print("Updating video format after COMMIT...")
             pixfmt = v4l2_pix_format()
-            pixfmt.width = 640
+            pixfmt.width = 640  # Should match the expected resolution
             pixfmt.height = 360
-            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV  # YUYV format
+            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV  # Ensure YUYV format
             pixfmt.field = V4L2_FIELD_NONE
-            pixfmt.bytesperline = pixfmt.width * 2  # 2 bytes per pixel
-            pixfmt.sizeimage = pixfmt.width * pixfmt.height * 2  # Total buffer size
-            pixfmt.colorspace = V4L2_COLORSPACE_SRGB  # Standard color space
-            pixfmt.ycbcr_enc = V4L2_YCBCR_ENC_601  # Encoding
-            pixfmt.quantization = V4L2_QUANTIZATION_LIM_RANGE  # Limited range
-            pixfmt.xfer_func = V4L2_XFER_FUNC_SRGB  # Transfer function
+            pixfmt.bytesperline = pixfmt.width * 2  # 2 bytes per pixel for YUYV
+            pixfmt.sizeimage = state.commit_control.dwMaxVideoFrameSize  # Match expected frame size
+            pixfmt.colorspace = V4L2_COLORSPACE_SRGB
+            pixfmt.ycbcr_enc = V4L2_YCBCR_ENC_601
+            pixfmt.quantization = V4L2_QUANTIZATION_LIM_RANGE
+            pixfmt.xfer_func = V4L2_XFER_FUNC_SRGB
 
             try:
                 fcntl.ioctl(fd, VIDIOC_S_FMT, pixfmt)
