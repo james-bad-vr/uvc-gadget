@@ -405,21 +405,21 @@ def init_streaming_control(ctrl, mode='default'):
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
     
-    # Set frame interval based on mode
+    # Standard values that work well with UVC
     if mode == 'min':
-        ctrl.dwFrameInterval = 500000  # Slowest frame rate
+        ctrl.dwFrameInterval = 333333  # 30fps
     elif mode == 'max':
-        ctrl.dwFrameInterval = 166666  # Fastest frame rate
+        ctrl.dwFrameInterval = 333333  # 30fps 
     else:
-        ctrl.dwFrameInterval = 333333  # Default 30fps
+        ctrl.dwFrameInterval = 333333  # 30fps
         
     ctrl.wKeyFrameRate = 0
     ctrl.wPFrameRate = 0
     ctrl.wCompQuality = 0
     ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
-    ctrl.dwMaxPayloadTransferSize = 2048  # Match C code exactly
+    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # Exact size for YUYV
+    ctrl.dwMaxPayloadTransferSize = 3072
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
     ctrl.bPreferedVersion = 1
@@ -768,14 +768,18 @@ def handle_setup_event(event):
                     print("  Operation: SET_CUR")
                     print("  -> Setting current_control and preparing for DATA phase")
                     state.current_control = cs
-                    response.length = 34  # Match C code exactly
+                    response.length = 0  # Match C code exactly
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
-                    print("  -> Returning current control values")
-                    memmove(addressof(response.data), addressof(ctrl), 
-                           sizeof(uvc_streaming_control))
-                    response.length = sizeof(uvc_streaming_control)
+                    if cs == UVC_VS_PROBE_CONTROL:
+                        # Return our stored probe settings
+                        memmove(addressof(response.data), addressof(state.probe_control), sizeof(uvc_streaming_control))
+                        response.length = sizeof(uvc_streaming_control)
+                    elif cs == UVC_VS_COMMIT_CONTROL:
+                        # Return our stored commit settings
+                        memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
+                        response.length = sizeof(uvc_streaming_control)
                     
                 elif req.bRequest == UVC_GET_MIN:
                     print("  Operation: GET_MIN")
@@ -834,15 +838,15 @@ def handle_data_event(event):
     print("UVC_EVENT_DATA")
     print("="*50)
     
-    print("Raw event data:")
-    raw_event_data = bytes(event.u)[:64]
-    print(' '.join(f'{b:02x}' for b in raw_event_data))
-
     if state.current_control is None:
         print("No current control set")
         return None
 
-    # The actual control data starts at offset 8 in the raw event data
+    print("Raw event data:")
+    raw_event_data = bytes(event.u)[:64]
+    print(' '.join(f'{b:02x}' for b in raw_event_data))
+
+    # Get control data starting at offset 8
     control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
     data_len = len(control_data)
     
@@ -850,20 +854,45 @@ def handle_data_event(event):
     print(' '.join(f'{b:02x}' for b in control_data[:16]))
 
     try:
-        # For PROBE control, we'll store the values but not modify them
-        if state.current_control == UVC_VS_PROBE_CONTROL:
-            print("\nStoring probe control values (unmodified)")
-            memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
-            
-        # For COMMIT control, we'll use the values from the PROBE phase
-        elif state.current_control == UVC_VS_COMMIT_CONTROL:
-            print("\nUsing probe control values for commit")
-            memmove(addressof(state.commit_control), addressof(state.probe_control), sizeof(uvc_streaming_control))
-            
-        print("Control data processed")
+        # Create a temporary control structure from the received data
+        ctrl = uvc_streaming_control.from_buffer_copy(control_data)
         
+        # Print received values for debugging
+        print("\nDEBUG - Received streaming control values:")
+        print(f"  bmHint: 0x{ctrl.bmHint:04x}")
+        print(f"  bFormatIndex: {ctrl.bFormatIndex}")
+        print(f"  bFrameIndex: {ctrl.bFrameIndex}")
+        print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
+        print(f"  wKeyFrameRate: {ctrl.wKeyFrameRate}")
+        print(f"  wPFrameRate: {ctrl.wPFrameRate}")
+        print(f"  wCompQuality: {ctrl.wCompQuality}")
+        print(f"  wCompWindowSize: {ctrl.wCompWindowSize}")
+        print(f"  wDelay: {ctrl.wDelay}")
+        print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
+        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+        print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
+        print(f"  bmFramingInfo: {ctrl.bmFramingInfo}")
+        print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
+        print(f"  bMinVersion: {ctrl.bMinVersion}")
+        print(f"  bMaxVersion: {ctrl.bMaxVersion}")
+
+        if state.current_control == UVC_VS_PROBE_CONTROL:
+            print("\nStoring PROBE control settings")
+            # Store these settings for use in GET_CUR responses
+            memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
+            # Also update commit control to match probe
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            
+        elif state.current_control == UVC_VS_COMMIT_CONTROL:
+            print("\nStoring COMMIT control settings")
+            # Store commit settings
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            print("dwMaxVideoFrameSize:", state.commit_control.dwMaxVideoFrameSize)
+            print("dwFrameInterval:", state.commit_control.dwFrameInterval)
+            
     except Exception as e:
         print(f"Error processing control data: {e}")
+        return None
 
     state.current_control = None
     return None
@@ -1049,10 +1078,12 @@ def handle_streamon_event(event):
         print(f"  Bytes per line: {current_format.bytesperline}")
         print(f"  Size image: {current_format.sizeimage}")
         
-        # Set frame rate to 30 fps (or desired rate)
-        fps = 30
-        frame_interval = int(1000000000 / fps)  # Convert to nanoseconds
-        print(f"\nSetting frame rate to {fps} fps (interval: {frame_interval}ns)")
+        # Use the committed frame interval for FPS
+        frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
+        fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
+        print(f"\nUsing committed settings:")
+        print(f"  Frame interval: {frame_interval_ns}ns")
+        print(f"  Target FPS: {fps}")
         
         # Queue initial buffers with timing information
         for buf in buffers:
@@ -1102,18 +1133,20 @@ def streaming_thread(fps):
     print(f"  Height: {current_format.height}")
     print(f"  Bytes per line: {current_format.bytesperline}")
     print(f"  Size image: {current_format.sizeimage}")
+    print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
     print(f"  Actual buffer size being used: {buffers[0]['length']}")
-    frame_count = 0
-    pattern_index = 0  # Track which pattern we're using
-    start_time = time.time()
     
-    # Create a poll object for monitoring buffer availability
-    poll = select.epoll()
-    poll.register(fd, select.EPOLLOUT)
+    frame_count = 0
+    pattern_index = 0
+    start_time = time.time()
+    frame_interval = 1.0 / fps
     
     # Stats tracking
     last_stats_time = time.time()
     frames_since_stats = 0
+    
+    poll = select.epoll()
+    poll.register(fd, select.EPOLLOUT)
     
     while state.streaming:
         try:
@@ -1126,12 +1159,16 @@ def streaming_thread(fps):
                 last_stats_time = current_time
                 frames_since_stats = 0
             
-            # Wait for buffer
+            # Wait for buffer with proper timing
+            next_frame_time = start_time + (frame_count + 1) * frame_interval
+            wait_time = max(0, next_frame_time - current_time)
+            if wait_time > 0:
+                time.sleep(wait_time)
+            
             events = poll.poll(10)  # 10ms timeout
             if not events:
                 continue
             
-            # Dequeue buffer
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             buf.memory = V4L2_MEMORY_MMAP
@@ -1152,8 +1189,8 @@ def streaming_thread(fps):
             # Move to next pattern
             pattern_index = (pattern_index + 1) % 8
             
-            # Queue buffer back
-            buf.bytesused = buffer['pattern_size']
+            # Use committed size
+            buf.bytesused = state.commit_control.dwMaxVideoFrameSize
             buf.timestamp.tv_sec = int(current_time)
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
