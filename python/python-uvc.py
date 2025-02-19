@@ -200,6 +200,7 @@ class uvc_event(Union):
     _fields_ = [
         ('req', usb_ctrlrequest),
         ('data', uvc_request_data),
+        ('resp', c_uint8 * 60)
     ]
 
 class timeval(Structure):
@@ -768,7 +769,7 @@ def handle_setup_event(event):
                     print("  Operation: SET_CUR")
                     print("  -> Setting current_control and preparing for DATA phase")
                     state.current_control = cs
-                    response.length = 34  # Match C code exactly
+                    response.length = 0
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
@@ -834,21 +835,28 @@ def handle_data_event(event):
     print("UVC_EVENT_DATA")
     print("="*50)
     
+    print("Raw event data:")
+    raw_event_data = bytes(event.u)[:64]
+    print(' '.join(f'{b:02x}' for b in raw_event_data))
+
     if state.current_control is None:
         print("No current control set")
         return None
 
-    # Get the full control data size
-    control_size = sizeof(uvc_streaming_control)
+    # For SET_CUR, the data comes in event.u.req
+    data = bytes(event.u.req)[:sizeof(uvc_streaming_control)]
+    data_len = len(data)
     
-    # Ensure we have enough data
-    if event.u.data.length < control_size:
-        print(f"Error: Insufficient data received ({event.u.data.length} bytes, expected {control_size})")
+    print(f"\nReceived {data_len} bytes of control data:")
+    if data_len > 0:
+        print(' '.join(f'{b:02x}' for b in data[:16]))
+    else:
+        print("Warning: No data received in DATA event")
         return None
 
     try:
         # Create a new streaming control structure from the received data
-        ctrl = uvc_streaming_control.from_buffer_copy(bytes(event.u.data.data[:control_size]))
+        ctrl = uvc_streaming_control.from_buffer_copy(data)
 
         print("\nDEBUG - Received streaming control values:")
         print(f"  bmHint: 0x{ctrl.bmHint:04x}")
@@ -870,10 +878,16 @@ def handle_data_event(event):
         
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\nUpdating probe control")
-            memmove(addressof(state.probe_control), addressof(ctrl), control_size)
+            memmove(addressof(state.probe_control), addressof(ctrl), sizeof(uvc_streaming_control))
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
-            print("\nUpdating commit control")
-            memmove(addressof(state.commit_control), addressof(ctrl), control_size)
+            print("\nUpdating commit control - COMMITTED FORMAT:")
+            memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
+            # Estimate resolution from maxVideoFrameSize
+            dwMaxVideoFrameSize = ctrl.dwMaxVideoFrameSize
+            estimated_width = int(((dwMaxVideoFrameSize / 2) ** 0.5))  # Since YUYV is 2 bytes/pixel
+            estimated_height = estimated_width
+            print(f"Estimated resolution from maxVideoFrameSize ({dwMaxVideoFrameSize}):")
+            print(f"  Possible resolution: {estimated_width}x{estimated_height}")
             
         print("Control data updated successfully")
         
