@@ -663,23 +663,31 @@ def streaming_thread(fps):
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
-    """Optimized test pattern generation"""
-    pattern = bytearray()
-    bytes_per_line = width * 2
-    square_size = 64
-    horizontal_offset = offset % width
+    """Optimized test pattern generation with explicit buffer layout"""
+    stride = width * 2  # YUY2 is 2 bytes per pixel
+    total_size = stride * height
+    pattern = bytearray(total_size)
     
+    # Fill pattern line by line with proper stride
     for y in range(height):
-        for x in range(0, bytes_per_line, 4):
+        row_offset = y * stride
+        for x in range(0, stride, 4):  # Process 2 pixels (4 bytes) at a time
             pixel_x = x // 2
-            shifted_x = (pixel_x + horizontal_offset) % width
-            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
-            color = WHITE if is_white else GRAY
-            pattern.extend(color.to_bytes(4, byteorder='little'))
+            shifted_x = (pixel_x + offset) % width
+            # Checkerboard based on coordinates
+            is_white = ((y // 64) + (shifted_x // 64)) % 2 == 0
+            
+            # YUY2 pattern: Y1 U Y2 V
+            if is_white:
+                # White in YUV space
+                pattern[row_offset + x:row_offset + x + 4] = bytes([235, 128, 235, 128])
+            else:
+                # Gray in YUV space
+                pattern[row_offset + x:row_offset + x + 4] = bytes([128, 128, 128, 128])
 
     mm.seek(0)
     mm.write(bytes(pattern))
-    return len(pattern)
+    return total_size
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
