@@ -714,7 +714,7 @@ def handle_setup_event(event):
     # Parse request
     req = usb_ctrlrequest.from_buffer_copy(bytes(event.u.data.data[:8]))
     response = uvc_request_data()
-    response.length = -errno.EL2HLT
+    response.length = -errno.EL2HLT  # Default response if not handled
     
     # Log request details
     print("\nRequest Details:")
@@ -729,7 +729,6 @@ def handle_setup_event(event):
     print(f"\nRequest Type: 0x{request_type:02x} " + 
           f"({'Class' if request_type == USB_TYPE_CLASS else 'Standard'})")
     
-    # Check if it's a class request
     if request_type == USB_TYPE_CLASS:
         cs = (req.wValue >> 8) & 0xFF
         interface = req.wIndex & 0xFF
@@ -738,75 +737,65 @@ def handle_setup_event(event):
         print(f"  Control Selector: 0x{cs:02x}")
         print(f"  Interface:        {interface}")
         
-        # Handle control interface requests (interface 0)
         if interface == 0:
             print("\nHandling Control Interface Request")
-            # Always return 0x03 for GET_INFO (indicating GET/SET supported)
-            response.data[0] = 0x03
+            response.data[0] = 0x03  # GET_INFO: Indicating GET/SET supported
             response.length = req.wLength
             
-        # Handle streaming interface requests (interface 1)
         elif interface == 1:
             print("\nHandling Streaming Interface Request")
-            
+
             if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
                 print(f"  Control: {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
-                ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
-                
+
                 if req.bRequest == UVC_SET_CUR:
                     print("  Operation: SET_CUR")
-                    print("  -> Setting current_control and preparing for DATA phase")
-                    state.current_control = cs
-                    response.length = req.wLength  # Changed to match requested length
+                    print("  -> Preparing for DATA phase")
+                    
+                    state.current_control = cs  # Mark which control is active
+                    response.length = req.wLength  # Indicate host should send data
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
                     print("  -> Returning current control values")
+
+                    ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-                    
+
                 elif req.bRequest == UVC_GET_MIN:
-                    print("  Operation: GET_MIN")
-                    print("  -> Returning minimum supported values")
+                    print("  Operation: GET_MIN -> Returning minimum supported values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl, mode='min')
-                    memmove(addressof(response.data), addressof(temp_ctrl),
-                           sizeof(uvc_streaming_control))
+                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-                    
+
                 elif req.bRequest == UVC_GET_MAX:
-                    print("  Operation: GET_MAX")
-                    print("  -> Returning maximum supported values")
+                    print("  Operation: GET_MAX -> Returning maximum supported values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl, mode='max')
-                    memmove(addressof(response.data), addressof(temp_ctrl),
-                           sizeof(uvc_streaming_control))
+                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-                    
+
                 elif req.bRequest == UVC_GET_RES:
-                    print("  Operation: GET_RES")
-                    print("  -> Returning resolution values")
+                    print("  Operation: GET_RES -> Returning resolution values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl)
-                    memmove(addressof(response.data), addressof(temp_ctrl),
-                           sizeof(uvc_streaming_control))
+                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-                    
+
                 elif req.bRequest == UVC_GET_INFO:
-                    print("  Operation: GET_INFO")
-                    print("  -> Returning capabilities (0x03: GET/SET supported)")
+                    print("  Operation: GET_INFO -> Returning capabilities (0x03: GET/SET supported)")
                     response.data[0] = 0x03
                     response.length = 1
-                    
+
                 elif req.bRequest == UVC_GET_DEF:
-                    print("  Operation: GET_DEF")
-                    print("  -> Returning default values")
+                    print("  Operation: GET_DEF -> Returning default values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl)
-                    memmove(addressof(response.data), addressof(temp_ctrl),
-                           sizeof(uvc_streaming_control))
+                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-        
+
     print(f"\nResponse prepared:")
     print(f"  Length: {response.length}")
     if response.length > 0:
@@ -816,6 +805,7 @@ def handle_setup_event(event):
     
     print("="*50 + "\n")
     return response
+
 
 def handle_data_event(event):
     print("\n" + "="*50)
@@ -836,6 +826,15 @@ def handle_data_event(event):
     
     print(f"\nReceived {data_len} bytes of control data:")
     print(' '.join(f'{b:02x}' for b in control_data[:16]))
+
+    if state.current_control is None:
+        print("No current control set, ignoring data")
+        return None
+
+    if data_len != sizeof(uvc_streaming_control):
+        print(f"Unexpected data length: {data_len}, expected {sizeof(uvc_streaming_control)}")
+        return None
+
 
     try:
         # Create a temporary control structure from the received data
