@@ -405,21 +405,21 @@ def init_streaming_control(ctrl, mode='default'):
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
     
-    # Set frame interval based on mode
+    # Set frame interval based on mode - adjust for macOS compatibility
     if mode == 'min':
-        ctrl.dwFrameInterval = 500000  # Slowest frame rate
+        ctrl.dwFrameInterval = 333333  # 30fps
     elif mode == 'max':
-        ctrl.dwFrameInterval = 166666  # Fastest frame rate
+        ctrl.dwFrameInterval = 333333  # 30fps 
     else:
-        ctrl.dwFrameInterval = 333333  # Default 30fps
+        ctrl.dwFrameInterval = 333333  # 30fps
         
     ctrl.wKeyFrameRate = 0
     ctrl.wPFrameRate = 0
     ctrl.wCompQuality = 0
     ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
-    ctrl.dwMaxPayloadTransferSize = 2048  # Match C code exactly
+    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # Exact size for YUYV
+    ctrl.dwMaxPayloadTransferSize = 3072      # Increased for macOS
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
     ctrl.bPreferedVersion = 1
