@@ -139,12 +139,6 @@ UVC_REQUEST_NAMES = {
     UVC_GET_DEF: "GET_DEF",
 }
 
-# Add frame size constants
-DEFAULT_WIDTH = 640
-DEFAULT_HEIGHT = 360
-DEFAULT_FPS = 30
-DEFAULT_INTERVAL = int(10000000 / DEFAULT_FPS)  # Convert fps to 100ns units
-
 
 
 class v4l2_capability(Structure):
@@ -406,40 +400,31 @@ def uvc_request_name(req):
     return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
 def init_streaming_control(ctrl, mode='default'):
-    """Initialize streaming control with exact values required by macOS"""
-    
-    # Basic parameters
+    """Initialize streaming control with exact same values as C code"""
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
     
-    # Frame interval - adjust based on mode
+    # Set frame interval based on mode
     if mode == 'min':
-        ctrl.dwFrameInterval = 333333  # 30fps
+        ctrl.dwFrameInterval = 500000  # Slowest frame rate
     elif mode == 'max':
-        ctrl.dwFrameInterval = 333333  # 30fps
+        ctrl.dwFrameInterval = 166666  # Fastest frame rate
     else:
-        ctrl.dwFrameInterval = 333333  # 30fps
+        ctrl.dwFrameInterval = 333333  # Default 30fps
         
-    # Video format parameters
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 = 2 bytes per pixel
-    ctrl.dwMaxPayloadTransferSize = 3072  # Increased for macOS
-    
-    # macOS-specific parameters
-    ctrl.wKeyFrameRate = 1
-    ctrl.wPFrameRate = 1
-    ctrl.wCompQuality = 1
-    ctrl.wCompWindowSize = 1
+    ctrl.wKeyFrameRate = 0
+    ctrl.wPFrameRate = 0
+    ctrl.wCompQuality = 0
+    ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
+    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
+    ctrl.dwMaxPayloadTransferSize = 2048  # Match C code exactly
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
-    ctrl.bPreferredVersion = 1
+    ctrl.bPreferedVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
-    
-    # Set explicit frame size
-    ctrl.wWidth = 640
-    ctrl.wHeight = 360
 
 
 def set_video_format(fd):
@@ -449,15 +434,15 @@ def set_video_format(fd):
     
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.fmt.pix.width = DEFAULT_WIDTH
-    fmt.fmt.pix.height = DEFAULT_HEIGHT
+    fmt.fmt.pix.width = 640
+    fmt.fmt.pix.height = 360
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.fmt.pix.bytesperline = DEFAULT_WIDTH * 2  # Ensure proper stride
-    fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * DEFAULT_HEIGHT
+    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
+    fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
     fmt.fmt.pix.xfer_func = V4L2_XFER_FUNC_SRGB
-    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601
+    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601  # Standard for YUYV
     fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
     
     try:
@@ -678,23 +663,23 @@ def streaming_thread(fps):
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
-    """Generate test pattern with proper stride alignment"""
-    bytes_per_line = width * 2  # YUY2 = 2 bytes per pixel
-    pattern_size = bytes_per_line * height
-    pattern = bytearray(pattern_size)
+    """Optimized test pattern generation"""
+    pattern = bytearray()
+    bytes_per_line = width * 2
+    square_size = 64
+    horizontal_offset = offset % width
     
     for y in range(height):
-        line_offset = y * bytes_per_line
         for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
-            shifted_x = (pixel_x + offset) % width
-            is_white = ((y // 64) + (shifted_x // 64)) % 2 == 0
+            shifted_x = (pixel_x + horizontal_offset) % width
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
             color = WHITE if is_white else GRAY
-            pattern[line_offset + x:line_offset + x + 4] = color.to_bytes(4, byteorder='little')
-    
+            pattern.extend(color.to_bytes(4, byteorder='little'))
+
     mm.seek(0)
     mm.write(bytes(pattern))
-    return pattern_size
+    return len(pattern)
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
