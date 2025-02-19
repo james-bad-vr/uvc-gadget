@@ -875,6 +875,13 @@ def handle_data_event(event):
                 # Ensure dwMaxPayloadTransferSize is set before GET_CUR (COMMIT)
             state.commit_control.dwMaxPayloadTransferSize = 3072  
 
+            print("\n✅ Sending COMMIT response to macOS...")
+            response = uvc_request_data()
+            response.length = sizeof(uvc_streaming_control)
+            memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+            print("✅ COMMIT response sent")
+
             print("Updating video format after COMMIT...")
 
               # Set video format
