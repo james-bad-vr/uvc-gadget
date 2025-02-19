@@ -752,34 +752,18 @@ def handle_setup_event(event):
             if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
                 print(f"  Control: {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
                 ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
-                  # Add explicit size calculations
-                ctrl.dwMaxVideoFrameSize = current_format.width * current_format.height * 2
-                ctrl.bmHint = 1
-                ctrl.bFormatIndex = 1
-                ctrl.bFrameIndex = 1
-                
-                # Ensure proper stride alignment for macOS
-                ctrl.wWidth = current_format.width
-                ctrl.wHeight = current_format.height
-                ctrl.dwMinBitRate = current_format.width * current_format.height * 16
-                ctrl.dwMaxBitRate = current_format.width * current_format.height * 16
                 
                 if req.bRequest == UVC_SET_CUR:
                     print("  Operation: SET_CUR")
                     print("  -> Setting current_control and preparing for DATA phase")
                     state.current_control = cs
-                    response.length = 0  # Match C code exactly
+                    response.length = req.wLength  # Changed to match requested length
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
-                    if cs == UVC_VS_PROBE_CONTROL:
-                        # Return our stored probe settings
-                        memmove(addressof(response.data), addressof(state.probe_control), sizeof(uvc_streaming_control))
-                        response.length = sizeof(uvc_streaming_control)
-                    elif cs == UVC_VS_COMMIT_CONTROL:
-                        # Return our stored commit settings
-                        memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
-                        response.length = sizeof(uvc_streaming_control)
+                    print("  -> Returning current control values")
+                    memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
+                    response.length = sizeof(uvc_streaming_control)
                     
                 elif req.bRequest == UVC_GET_MIN:
                     print("  Operation: GET_MIN")
