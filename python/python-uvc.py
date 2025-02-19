@@ -830,20 +830,57 @@ def handle_setup_event(event):
     return response
 
 def handle_data_event(event):
-    print("\nUVC_EVENT_DATA")
+    print("\n" + "="*50)
+    print("UVC_EVENT_DATA")
+    print("="*50)
+    
     if state.current_control is None:
+        print("No current control set")
         return None
+
+    data = bytes(event.u.data.data[:event.u.data.length])
+    print(f"\nReceived {len(data)} bytes of control data:")
+    print(' '.join(f'{b:02x}' for b in data))
+
+    try:
+        ctrl = uvc_streaming_control.from_buffer_copy(data)
+        print("\nDEBUG - Received streaming control values:")
+        print(f"  bmHint: 0x{ctrl.bmHint:04x}")
+        print(f"  bFormatIndex: {ctrl.bFormatIndex}")
+        print(f"  bFrameIndex: {ctrl.bFrameIndex}")
+        print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
+        print(f"  wKeyFrameRate: {ctrl.wKeyFrameRate}")
+        print(f"  wPFrameRate: {ctrl.wPFrameRate}")
+        print(f"  wCompQuality: {ctrl.wCompQuality}")
+        print(f"  wCompWindowSize: {ctrl.wCompWindowSize}")
+        print(f"  wDelay: {ctrl.wDelay}")
+        print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
+        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+        print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
+        print(f"  bmFramingInfo: {ctrl.bmFramingInfo}")
+        print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
+        print(f"  bMinVersion: {ctrl.bMinVersion}")
+        print(f"  bMaxVersion: {ctrl.bMaxVersion}")
+    except Exception as e:
+        print(f"Error parsing control data: {e}")
 
     data_len = min(event.u.data.length, sizeof(uvc_streaming_control))
     
     if state.current_control == UVC_VS_PROBE_CONTROL:
-        print("Updating probe control")
+        print("\nUpdating probe control")
         memmove(addressof(state.probe_control), event.u.data.data, data_len)
     elif state.current_control == UVC_VS_COMMIT_CONTROL:
-        print("Updating commit control")
+        print("\nUpdating commit control - COMMITTED FORMAT:")
         memmove(addressof(state.commit_control), event.u.data.data, data_len)
+        ctrl = state.commit_control
+        dwMaxVideoFrameSize = ctrl.dwMaxVideoFrameSize
+        estimated_width = int(((dwMaxVideoFrameSize / 2) ** 0.5))  # Since we know it's YUYV (2 bytes/pixel)
+        estimated_height = estimated_width
+        print(f"Estimated resolution from maxVideoFrameSize ({dwMaxVideoFrameSize}):")
+        print(f"  Possible resolution: {estimated_width}x{estimated_height}")
     
     state.current_control = None
+    print("="*50 + "\n")
     return None
 
 def init_video_buffers(fd):
