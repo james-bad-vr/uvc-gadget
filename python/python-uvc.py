@@ -833,6 +833,8 @@ def handle_data_event(event):
     print("\n" + "="*50)
     print("UVC_EVENT_DATA")
     print("="*50)
+
+    return None
     
     print("Raw event data:")
     raw_event_data = bytes(event.u)[:64]
