@@ -757,11 +757,20 @@ def handle_setup_event(event):
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
-                    print("  -> Returning current control values")
 
-                    ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
+                    if cs == UVC_VS_PROBE_CONTROL:
+                        print("  -> Returning PROBE control values")
+                        ctrl = state.probe_control
+                    elif cs == UVC_VS_COMMIT_CONTROL:
+                        print("  -> Returning COMMIT control values")
+                        ctrl = state.commit_control
+
+                    # Ensure that we return the committed values correctly
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
+                    
+                    print("  Response Data:")
+                    print(' '.join(f'{b:02x}' for b in bytes(response.data[:16])))
 
                 elif req.bRequest == UVC_GET_MIN:
                     print("  Operation: GET_MIN -> Returning minimum supported values")
@@ -827,58 +836,49 @@ def handle_data_event(event):
     print(f"\nReceived {data_len} bytes of control data:")
     print(' '.join(f'{b:02x}' for b in control_data[:16]))
 
-    if state.current_control is None:
-        print("No current control set, ignoring data")
-        return None
-
     if data_len != sizeof(uvc_streaming_control):
         print(f"Unexpected data length: {data_len}, expected {sizeof(uvc_streaming_control)}")
         return None
 
-
     try:
-        # Create a temporary control structure from the received data
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
-        
-        # Print received values for debugging
+
         print("\nDEBUG - Received streaming control values:")
-        print(f"  bmHint: 0x{ctrl.bmHint:04x}")
+        print(f"  bmHint: {ctrl.bmHint}")
         print(f"  bFormatIndex: {ctrl.bFormatIndex}")
         print(f"  bFrameIndex: {ctrl.bFrameIndex}")
         print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
-        print(f"  wKeyFrameRate: {ctrl.wKeyFrameRate}")
-        print(f"  wPFrameRate: {ctrl.wPFrameRate}")
-        print(f"  wCompQuality: {ctrl.wCompQuality}")
-        print(f"  wCompWindowSize: {ctrl.wCompWindowSize}")
-        print(f"  wDelay: {ctrl.wDelay}")
         print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
         print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
-        print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
-        print(f"  bmFramingInfo: {ctrl.bmFramingInfo}")
-        print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
-        print(f"  bMinVersion: {ctrl.bMinVersion}")
-        print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\nStoring PROBE control settings")
-            # Store these settings for use in GET_CUR responses
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
             # Also update commit control to match probe
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\nStoring COMMIT control settings")
-            # Store commit settings
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
-            print("dwMaxVideoFrameSize:", state.commit_control.dwMaxVideoFrameSize)
-            print("dwFrameInterval:", state.commit_control.dwFrameInterval)
-            
+
+            # Ensure dwMaxPayloadTransferSize is set correctly
+            state.commit_control.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
+            print(f"  Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
+
+            # Ensure frame interval is copied from probe
+            state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
+
+            print("Final COMMIT settings:")
+            print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
+            print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
+
     except Exception as e:
         print(f"Error processing control data: {e}")
         return None
 
     state.current_control = None
     return None
+
 
 def init_video_buffers(fd):
     """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
