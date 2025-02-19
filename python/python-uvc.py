@@ -875,19 +875,24 @@ def handle_data_event(event):
                 # Ensure dwMaxPayloadTransferSize is set before GET_CUR (COMMIT)
             state.commit_control.dwMaxPayloadTransferSize = 3072  
 
-            # Update Video Format (MISSING in Python but in C)
+            # Properly Initialize Video Format (Mimicking the C implementation)
             print("Updating video format after COMMIT...")
             pixfmt = v4l2_pix_format()
             pixfmt.width = 640
             pixfmt.height = 360
-            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV
+            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV  # YUYV format
             pixfmt.field = V4L2_FIELD_NONE
-            pixfmt.sizeimage = state.commit_control.dwMaxVideoFrameSize
+            pixfmt.bytesperline = pixfmt.width * 2  # 2 bytes per pixel
+            pixfmt.sizeimage = pixfmt.width * pixfmt.height * 2  # Total buffer size
+            pixfmt.colorspace = V4L2_COLORSPACE_SRGB  # Standard color space
+            pixfmt.ycbcr_enc = V4L2_YCBCR_ENC_601  # Encoding
+            pixfmt.quantization = V4L2_QUANTIZATION_LIM_RANGE  # Limited range
+            pixfmt.xfer_func = V4L2_XFER_FUNC_SRGB  # Transfer function
 
             try:
                 fcntl.ioctl(fd, VIDIOC_S_FMT, pixfmt)
                 print(f"✅ Video format updated: {pixfmt.width}x{pixfmt.height}, {hex(pixfmt.pixelformat)}")
-            except Exception as e:
+            except OSError as e:
                 print(f"⚠️ Failed to update video format: {e}")
 
             # Update Frame Rate
