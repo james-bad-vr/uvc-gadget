@@ -747,46 +747,50 @@ def handle_setup_event(event):
 
             if cs in [UVC_VS_PROBE_CONTROL, UVC_VS_COMMIT_CONTROL]:
                 print(f"  Control: {'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT'}")
-                ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
 
                 if req.bRequest == UVC_SET_CUR:
                     print("  Operation: SET_CUR")
                     print("  -> Preparing for DATA phase")
-                    state.current_control = cs
-                    response.length = sizeof(uvc_streaming_control)
+                    
+                    state.current_control = cs  # Mark which control is active
+                    response.length = req.wLength  # Indicate host should send data
                     
                 elif req.bRequest == UVC_GET_CUR:
                     print("  Operation: GET_CUR")
                     print("  -> Returning current control values")
+
+                    ctrl = state.probe_control if cs == UVC_VS_PROBE_CONTROL else state.commit_control
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
 
                 elif req.bRequest == UVC_GET_MIN:
-                    print("  Operation: GET_MIN -> Returning minimum values")
+                    print("  Operation: GET_MIN -> Returning minimum supported values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl, mode='min')
                     memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
 
                 elif req.bRequest == UVC_GET_MAX:
-                    print("  Operation: GET_MAX -> Returning maximum values")
+                    print("  Operation: GET_MAX -> Returning maximum supported values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl, mode='max')
                     memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
 
                 elif req.bRequest == UVC_GET_RES:
-                    print("  Operation: GET_RES -> Returning resolution")
-                    response.data[0] = 0x00
+                    print("  Operation: GET_RES -> Returning resolution values")
+                    temp_ctrl = uvc_streaming_control()
+                    init_streaming_control(temp_ctrl)
+                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
 
                 elif req.bRequest == UVC_GET_INFO:
-                    print("  Operation: GET_INFO -> Returning capabilities")
-                    response.data[0] = 0x03  # GET/SET supported
+                    print("  Operation: GET_INFO -> Returning capabilities (0x03: GET/SET supported)")
+                    response.data[0] = 0x03
                     response.length = 1
 
                 elif req.bRequest == UVC_GET_DEF:
-                    print("  Operation: GET_DEF -> Returning defaults")
+                    print("  Operation: GET_DEF -> Returning default values")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl)
                     memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
@@ -812,22 +816,28 @@ def handle_data_event(event):
         print("No current control set")
         return None
 
-    # Access the data field directly from the uvc_request_data structure
-    data = event.u.data
-    data_len = data.length
-    
     print("Raw event data:")
-    raw_data = bytes(data.data[:data_len])
-    print(' '.join(f'{b:02x}' for b in raw_data))
+    raw_event_data = bytes(event.u)[:64]
+    print(' '.join(f'{b:02x}' for b in raw_event_data))
 
-    if data_len < sizeof(uvc_streaming_control):
-        print(f"Data too short: {data_len} bytes, expected {sizeof(uvc_streaming_control)}")
+    # Get control data starting at offset 8
+    control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
+    data_len = len(control_data)
+    
+    print(f"\nReceived {data_len} bytes of control data:")
+    print(' '.join(f'{b:02x}' for b in control_data[:16]))
+
+    if state.current_control is None:
+        print("No current control set, ignoring data")
         return None
 
+    if data_len != sizeof(uvc_streaming_control):
+        print(f"Unexpected data length: {data_len}, expected {sizeof(uvc_streaming_control)}")
+        return None
+
+
     try:
-        # Create streaming control structure directly from the data
-        # Skip first 8 bytes which contain event metadata
-        control_data = bytes(data.data[8:8 + sizeof(uvc_streaming_control)])
+        # Create a temporary control structure from the received data
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
         
         # Print received values for debugging
@@ -849,43 +859,24 @@ def handle_data_event(event):
         print(f"  bMinVersion: {ctrl.bMinVersion}")
         print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
-        # Validate critical parameters
-        if ctrl.bFormatIndex == 0 or ctrl.bFrameIndex == 0:
-            print("Invalid format or frame index")
-            return None
-
-        # Create a new control structure to ensure proper memory layout
-        new_ctrl = uvc_streaming_control()
-        memmove(addressof(new_ctrl), control_data, sizeof(uvc_streaming_control))
-
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\nStoring PROBE control settings")
-            # Store complete structure
-            state.probe_control = new_ctrl
+            # Store these settings for use in GET_CUR responses
+            memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
             # Also update commit control to match probe
-            state.commit_control = new_ctrl
-            
-            print(f"Stored PROBE settings:")
-            print(f"  Format Index: {state.probe_control.bFormatIndex}")
-            print(f"  Frame Index: {state.probe_control.bFrameIndex}")
-            print(f"  Frame Interval: {state.probe_control.dwFrameInterval}")
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\nStoring COMMIT control settings")
-            state.commit_control = new_ctrl
-            print(f"Committed settings:")
-            print(f"  Max Video Frame Size: {state.commit_control.dwMaxVideoFrameSize}")
-            print(f"  Frame Interval: {state.commit_control.dwFrameInterval}")
-            print(f"  Max Payload Size: {state.commit_control.dwMaxPayloadTransferSize}")
+            # Store commit settings
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            print("dwMaxVideoFrameSize:", state.commit_control.dwMaxVideoFrameSize)
+            print("dwFrameInterval:", state.commit_control.dwFrameInterval)
             
     except Exception as e:
         print(f"Error processing control data: {e}")
-        print(f"Exception details: {type(e).__name__}")
-        import traceback
-        traceback.print_exc()
         return None
 
-    # Clear current control after successful processing
     state.current_control = None
     return None
 
