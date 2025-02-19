@@ -838,12 +838,18 @@ def handle_data_event(event):
         print("No current control set")
         return None
 
-    data = bytes(event.u.data.data[:event.u.data.length])
-    print(f"\nReceived {len(data)} bytes of control data:")
-    print(' '.join(f'{b:02x}' for b in data))
+    # Get the full control data size
+    control_size = sizeof(uvc_streaming_control)
+    
+    # Ensure we have enough data
+    if event.u.data.length < control_size:
+        print(f"Error: Insufficient data received ({event.u.data.length} bytes, expected {control_size})")
+        return None
 
     try:
-        ctrl = uvc_streaming_control.from_buffer_copy(data)
+        # Create a new streaming control structure from the received data
+        ctrl = uvc_streaming_control.from_buffer_copy(bytes(event.u.data.data[:control_size]))
+
         print("\nDEBUG - Received streaming control values:")
         print(f"  bmHint: 0x{ctrl.bmHint:04x}")
         print(f"  bFormatIndex: {ctrl.bFormatIndex}")
@@ -861,26 +867,20 @@ def handle_data_event(event):
         print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
         print(f"  bMinVersion: {ctrl.bMinVersion}")
         print(f"  bMaxVersion: {ctrl.bMaxVersion}")
+        
+        if state.current_control == UVC_VS_PROBE_CONTROL:
+            print("\nUpdating probe control")
+            memmove(addressof(state.probe_control), addressof(ctrl), control_size)
+        elif state.current_control == UVC_VS_COMMIT_CONTROL:
+            print("\nUpdating commit control")
+            memmove(addressof(state.commit_control), addressof(ctrl), control_size)
+            
+        print("Control data updated successfully")
+        
     except Exception as e:
-        print(f"Error parsing control data: {e}")
+        print(f"Error processing control data: {e}")
 
-    data_len = min(event.u.data.length, sizeof(uvc_streaming_control))
-    
-    if state.current_control == UVC_VS_PROBE_CONTROL:
-        print("\nUpdating probe control")
-        memmove(addressof(state.probe_control), event.u.data.data, data_len)
-    elif state.current_control == UVC_VS_COMMIT_CONTROL:
-        print("\nUpdating commit control - COMMITTED FORMAT:")
-        memmove(addressof(state.commit_control), event.u.data.data, data_len)
-        ctrl = state.commit_control
-        dwMaxVideoFrameSize = ctrl.dwMaxVideoFrameSize
-        estimated_width = int(((dwMaxVideoFrameSize / 2) ** 0.5))  # Since we know it's YUYV (2 bytes/pixel)
-        estimated_height = estimated_width
-        print(f"Estimated resolution from maxVideoFrameSize ({dwMaxVideoFrameSize}):")
-        print(f"  Possible resolution: {estimated_width}x{estimated_height}")
-    
     state.current_control = None
-    print("="*50 + "\n")
     return None
 
 def init_video_buffers(fd):
