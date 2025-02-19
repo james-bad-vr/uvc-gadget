@@ -833,8 +833,6 @@ def handle_data_event(event):
     print("\n" + "="*50)
     print("UVC_EVENT_DATA")
     print("="*50)
-
-    return None
     
     print("Raw event data:")
     raw_event_data = bytes(event.u)[:64]
@@ -845,55 +843,48 @@ def handle_data_event(event):
         return None
 
     # The actual control data starts at offset 8 in the raw event data
-    control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
-    data_len = len(control_data)
+    ctrl = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
+    data_len = len(ctrl)
     
     print(f"\nReceived {data_len} bytes of control data:")
-    print(' '.join(f'{b:02x}' for b in control_data[:16]))
+    print(' '.join(f'{b:02x}' for b in ctrl[:16]))
+
+    print("\nDEBUG - Received streaming control values:")
+    print(f"  bmHint: 0x{ctrl.bmHint:04x}")
+    print(f"  bFormatIndex: {ctrl.bFormatIndex}")
+    print(f"  bFrameIndex: {ctrl.bFrameIndex}")
+    print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
+    print(f"  wKeyFrameRate: {ctrl.wKeyFrameRate}")
+    print(f"  wPFrameRate: {ctrl.wPFrameRate}")
+    print(f"  wCompQuality: {ctrl.wCompQuality}")
+    print(f"  wCompWindowSize: {ctrl.wCompWindowSize}")
+    print(f"  wDelay: {ctrl.wDelay}")
+    print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
+    print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+    print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
+    print(f"  bmFramingInfo: {ctrl.bmFramingInfo}")
+    print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
+    print(f"  bMinVersion: {ctrl.bMinVersion}")
+    print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
     try:
-        # Create a new streaming control structure from the received data
-        ctrl = uvc_streaming_control.from_buffer_copy(control_data)
-
-        print("\nDEBUG - Received streaming control values:")
-        print(f"  bmHint: 0x{ctrl.bmHint:04x}")
-        print(f"  bFormatIndex: {ctrl.bFormatIndex}")
-        print(f"  bFrameIndex: {ctrl.bFrameIndex}")
-        print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
-        print(f"  wKeyFrameRate: {ctrl.wKeyFrameRate}")
-        print(f"  wPFrameRate: {ctrl.wPFrameRate}")
-        print(f"  wCompQuality: {ctrl.wCompQuality}")
-        print(f"  wCompWindowSize: {ctrl.wCompWindowSize}")
-        print(f"  wDelay: {ctrl.wDelay}")
-        print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
-        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
-        print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
-        print(f"  bmFramingInfo: {ctrl.bmFramingInfo}")
-        print(f"  bPreferedVersion: {ctrl.bPreferedVersion}")
-        print(f"  bMinVersion: {ctrl.bMinVersion}")
-        print(f"  bMaxVersion: {ctrl.bMaxVersion}")
-        
+        # For PROBE control, we'll store the values but not modify them
         if state.current_control == UVC_VS_PROBE_CONTROL:
-            print("\nUpdating probe control")
-            memmove(addressof(state.probe_control), addressof(ctrl), sizeof(uvc_streaming_control))
-        elif state.current_control == UVC_VS_COMMIT_CONTROL:
-            print("\nUpdating commit control - COMMITTED FORMAT:")
-            memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
-            # Estimate resolution from maxVideoFrameSize
-            dwMaxVideoFrameSize = ctrl.dwMaxVideoFrameSize
-            estimated_width = int(((dwMaxVideoFrameSize / 2) ** 0.5))  # Since YUYV is 2 bytes/pixel
-            estimated_height = estimated_width
-            print(f"Estimated resolution from maxVideoFrameSize ({dwMaxVideoFrameSize}):")
-            print(f"  Possible resolution: {estimated_width}x{estimated_height}")
+            print("\nStoring probe control values (unmodified)")
+            memmove(addressof(state.probe_control), ctrl, sizeof(uvc_streaming_control))
             
-        print("Control data updated successfully")
+        # For COMMIT control, we'll use the values from the PROBE phase
+        elif state.current_control == UVC_VS_COMMIT_CONTROL:
+            print("\nUsing probe control values for commit")
+            memmove(addressof(state.commit_control), addressof(state.probe_control), sizeof(uvc_streaming_control))
+            
+        print("Control data processed")
         
     except Exception as e:
         print(f"Error processing control data: {e}")
 
     state.current_control = None
     return None
-
 def init_video_buffers(fd):
     """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
     print("\nInitializing video buffers")
