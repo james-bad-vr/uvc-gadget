@@ -1067,6 +1067,12 @@ def handle_streamon_event(event):
 def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
     print("\nStreaming thread started")
+    print(f"Current format:")
+    print(f"  Width: {current_format.width}")
+    print(f"  Height: {current_format.height}")
+    print(f"  Bytes per line: {current_format.bytesperline}")
+    print(f"  Size image: {current_format.sizeimage}")
+    print(f"  Actual buffer size being used: {buffers[0]['length']}")
     frame_count = 0
     pattern_index = 0  # Track which pattern we're using
     start_time = time.time()
