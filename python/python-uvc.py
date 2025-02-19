@@ -872,17 +872,27 @@ def handle_data_event(event):
             print("\nStoring COMMIT control settings")
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
 
-            # Ensure `dwMaxPayloadTransferSize` is set before GET_CUR (COMMIT)
-            if state.commit_control.dwMaxPayloadTransferSize == 0:
-                state.commit_control.dwMaxPayloadTransferSize = 3072
-                print(f"  ✅ Fixed COMMIT dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
+                # Ensure dwMaxPayloadTransferSize is set before GET_CUR (COMMIT)
+            state.commit_control.dwMaxPayloadTransferSize = 3072  
 
-            # Ensure frame interval is copied from probe
-            state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
+            # Update Video Format (MISSING in Python but in C)
+            print("Updating video format after COMMIT...")
+            pixfmt = v4l2_pix_format()
+            pixfmt.width = 640
+            pixfmt.height = 360
+            pixfmt.pixelformat = V4L2_PIX_FMT_YUYV
+            pixfmt.field = V4L2_FIELD_NONE
+            pixfmt.sizeimage = state.commit_control.dwMaxVideoFrameSize
 
-            print("Final COMMIT settings:")
-            print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
-            print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
+            try:
+                fcntl.ioctl(fd, VIDIOC_S_FMT, pixfmt)
+                print(f"✅ Video format updated: {pixfmt.width}x{pixfmt.height}, {hex(pixfmt.pixelformat)}")
+            except Exception as e:
+                print(f"⚠️ Failed to update video format: {e}")
+
+            # Update Frame Rate
+            fps = int(1000000000 / state.commit_control.dwFrameInterval)
+            print(f"✅ Setting frame rate: {fps} FPS")
 
     except Exception as e:
         print(f"Error processing control data: {e}")
