@@ -227,55 +227,102 @@ uvc_events_process_control(struct uvc_device *dev, uint8_t req, uint8_t cs, uint
 
 static void
 uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
-			     struct uvc_request_data *resp)
+                 struct uvc_request_data *resp)
 {
-	struct uvc_streaming_control *ctrl;
+    struct uvc_streaming_control *ctrl;
 
-	printf("streaming request (req %s cs %02x)\n", uvc_request_name(req), cs);
+    printf("\n=== UVC Streaming Request ===\n");
+    printf("Request: %s (0x%02x)\n", uvc_request_name(req), req);
+    printf("Control Selector: %s (0x%02x)\n", 
+           cs == UVC_VS_PROBE_CONTROL ? "PROBE" : 
+           cs == UVC_VS_COMMIT_CONTROL ? "COMMIT" : "UNKNOWN",
+           cs);
 
-	if (cs != UVC_VS_PROBE_CONTROL && cs != UVC_VS_COMMIT_CONTROL)
-		return;
+    if (cs != UVC_VS_PROBE_CONTROL && cs != UVC_VS_COMMIT_CONTROL) {
+        printf("Invalid control selector, ignoring request\n");
+        return;
+    }
 
-	ctrl = (struct uvc_streaming_control *)&resp->data;
-	resp->length = sizeof *ctrl;
+    ctrl = (struct uvc_streaming_control *)&resp->data;
+    resp->length = sizeof *ctrl;
 
-	switch (req) {
-	case UVC_SET_CUR:
-		dev->control = cs;
-		resp->length = 34;
-		break;
+    printf("Initial response length: %zu bytes\n", resp->length);
 
-	case UVC_GET_CUR:
-		if (cs == UVC_VS_PROBE_CONTROL)
-			memcpy(ctrl, &dev->probe, sizeof *ctrl);
-		else
-			memcpy(ctrl, &dev->commit, sizeof *ctrl);
-		break;
+    switch (req) {
+    case UVC_SET_CUR:
+        printf("SET_CUR Request\n");
+        printf("Setting control to: %s\n", 
+               cs == UVC_VS_PROBE_CONTROL ? "PROBE" : "COMMIT");
+        dev->control = cs;
+        resp->length = 34;
+        printf("Response length set to: %d\n", resp->length);
+        break;
 
-	case UVC_GET_MIN:
-	case UVC_GET_MAX:
-	case UVC_GET_DEF:
-		if (req == UVC_GET_MAX)
-			uvc_fill_streaming_control(dev, ctrl, -1, -1, UINT_MAX);
-		else
-			uvc_fill_streaming_control(dev, ctrl, 1, 1, 0);
-		break;
+    case UVC_GET_CUR:
+        printf("GET_CUR Request for %s\n", 
+               cs == UVC_VS_PROBE_CONTROL ? "PROBE" : "COMMIT");
+        if (cs == UVC_VS_PROBE_CONTROL) {
+            printf("Copying PROBE control data:\n");
+            printf("Before copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+            memcpy(ctrl, &dev->probe, sizeof *ctrl);
+            printf("After copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+        } else {
+            printf("Copying COMMIT control data:\n");
+            printf("Before copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+            memcpy(ctrl, &dev->commit, sizeof *ctrl);
+            printf("After copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+        }
+        printf("Control data: bmHint=%04x, format=%d, frame=%d\n",
+               ctrl->bmHint, ctrl->bFormatIndex, ctrl->bFrameIndex);
+        printf("Frame interval=%d, keyframe=%d, pframe=%d\n",
+               ctrl->dwFrameInterval, ctrl->bKeyFrameRate, ctrl->bPFrameRate);
+        printf("Comp quality=%d, window=%d\n",
+               ctrl->wCompQuality, ctrl->wCompWindow);
+        break;
 
-	case UVC_GET_RES:
-		memset(ctrl, 0, sizeof *ctrl);
-		break;
+    case UVC_GET_MIN:
+    case UVC_GET_MAX:
+    case UVC_GET_DEF:
+        printf("%s Request\n", uvc_request_name(req));
+        if (req == UVC_GET_MAX) {
+            printf("Getting maximum values\n");
+            uvc_fill_streaming_control(dev, ctrl, -1, -1, UINT_MAX);
+        } else {
+            printf("Getting minimum/default values\n");
+            uvc_fill_streaming_control(dev, ctrl, 1, 1, 0);
+        }
+        printf("Filled control data: format=%d, frame=%d\n",
+               ctrl->bFormatIndex, ctrl->bFrameIndex);
+        break;
 
-	case UVC_GET_LEN:
-		resp->data[0] = 0x00;
-		resp->data[1] = 0x22;
-		resp->length = 2;
-		break;
+    case UVC_GET_RES:
+        printf("GET_RES Request\n");
+        printf("Clearing control data\n");
+        memset(ctrl, 0, sizeof *ctrl);
+        break;
 
-	case UVC_GET_INFO:
-		resp->data[0] = 0x03;
-		resp->length = 1;
-		break;
-	}
+    case UVC_GET_LEN:
+        printf("GET_LEN Request\n");
+        resp->data[0] = 0x00;
+        resp->data[1] = 0x22;
+        resp->length = 2;
+        printf("Reporting length: 0x%02x%02x\n", 
+               resp->data[1], resp->data[0]);
+        break;
+
+    case UVC_GET_INFO:
+        printf("GET_INFO Request\n");
+        resp->data[0] = 0x03;
+        resp->length = 1;
+        printf("Reporting capabilities: 0x%02x\n", resp->data[0]);
+        break;
+    }
+
+    printf("=== End of Request Processing ===\n\n");
 }
 
 static void
