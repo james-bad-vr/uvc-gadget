@@ -275,9 +275,9 @@ uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
 		printf("Control data: bmHint=%04x, format=%d, frame=%d\n",
 			ctrl->bmHint, ctrl->bFormatIndex, ctrl->bFrameIndex);
 		printf("Frame interval=%d, keyframe=%d, pframe=%d\n",
-			ctrl->dwFrameInterval, ctrl->bKeyFrameRate, ctrl->bPFrameRate);
+			ctrl->dwFrameInterval, ctrl->wKeyFrameRate, ctrl->wPFrameRate);
 		printf("Comp quality=%d, window=%d\n",
-			ctrl->wCompQuality, ctrl->wCompWindow);
+			ctrl->wCompQuality, ctrl->wCompWindowSize);
 		break;
 
 	case UVC_GET_MIN:
