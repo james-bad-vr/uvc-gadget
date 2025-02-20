@@ -221,13 +221,26 @@ uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
 {
 	struct uvc_streaming_control *ctrl;
 
+	printf("\n=== UVC Streaming Request ===\n");
+
 	printf("streaming request (req %s cs %02x)\n", uvc_request_name(req), cs);
 
-	if (cs != UVC_VS_PROBE_CONTROL && cs != UVC_VS_COMMIT_CONTROL)
-		return;
+	printf("Control Selector: %s (0x%02x)\n", 
+           cs == UVC_VS_PROBE_CONTROL ? "PROBE" : 
+           cs == UVC_VS_COMMIT_CONTROL ? "COMMIT" : "UNKNOWN",
+           cs);
+
+
+
+	 if (cs != UVC_VS_PROBE_CONTROL && cs != UVC_VS_COMMIT_CONTROL) {
+        printf("Invalid control selector, ignoring request\n");
+        return;
+    }
 
 	ctrl = (struct uvc_streaming_control *)&resp->data;
 	resp->length = sizeof *ctrl;
+
+	printf("Initial response length: %zu bytes\n", resp->length);
 
 	switch (req) {
 	case UVC_SET_CUR:
