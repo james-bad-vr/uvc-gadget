@@ -91,9 +91,6 @@ echo "UVC" | sudo tee configs/c.1/strings/0x409/configuration > /dev/null
 # create UVC function
 mkdir -p functions/uvc.0
 mkdir -p functions/uvc.0/control/header/h
-# Set UVC Streaming Interface explicitly
-echo 1 | sudo tee functions/uvc.0/streaming/bInterfaceNumber > /dev/null
-echo 1 | sudo tee functions/uvc.0/control/bInterfaceNumber > /dev/null
 
 echo 2048 | sudo tee functions/uvc.0/streaming_maxpacket > /dev/null  # Max packet size for isochronous
 echo 1 | sudo tee functions/uvc.0/streaming_interval > /dev/null  # Max packet size for isochronous
