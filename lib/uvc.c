@@ -83,16 +83,6 @@ static const char *uvc_pu_control_names[] = {
 	[UVC_PU_ANALOG_LOCK_STATUS_CONTROL] = "ANALOG_LOCK_STATUS",
 };
 
-// Debug function to print memory in hex
-static void hexdump(const void* data, size_t size) {
-    const unsigned char* d = (const unsigned char*)data;
-    for (size_t i = 0; i < size; i++) {
-        printf("%02x ", d[i]);
-        if ((i + 1) % 16 == 0) printf("\n");
-    }
-    printf("\n");
-}
-
 static const char *pu_control_name(uint8_t cs)
 {
     if (cs < ARRAY_SIZE(uvc_pu_control_names))
