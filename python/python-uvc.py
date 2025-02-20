@@ -765,11 +765,6 @@ def handle_setup_event(event):
                         print("  -> Returning COMMIT control values")
                         ctrl = state.commit_control
 
-                    print("\nDEBUG - Sending GET_CUR Response:")
-                    print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
-                    print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
-                    print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
-
                     # Ensure that we return the committed values correctly
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
@@ -825,7 +820,7 @@ def handle_data_event(event):
     print("\n" + "="*50)
     print("UVC_EVENT_DATA")
     print("="*50)
-
+    
     if state.current_control is None:
         print("No current control set")
         return None
@@ -837,7 +832,7 @@ def handle_data_event(event):
     # Get control data starting at offset 8
     control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
     data_len = len(control_data)
-
+    
     print(f"\nReceived {data_len} bytes of control data:")
     print(' '.join(f'{b:02x}' for b in control_data[:16]))
 
@@ -859,43 +854,30 @@ def handle_data_event(event):
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\nStoring PROBE control settings")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
-            
-            # Ensure payload size is set before GET_CUR (PROBE) happens
-            if state.probe_control.dwMaxPayloadTransferSize == 0:
-                state.probe_control.dwMaxPayloadTransferSize = 3072
-                print(f"  ✅ Fixed PROBE dwMaxPayloadTransferSize: {state.probe_control.dwMaxPayloadTransferSize}")
-
             # Also update commit control to match probe
-            memmove(addressof(state.commit_control), addressof(state.probe_control), sizeof(uvc_streaming_control))
-
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\nStoring COMMIT control settings")
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
 
-                # Ensure dwMaxPayloadTransferSize is set before GET_CUR (COMMIT)
-            state.commit_control.dwMaxPayloadTransferSize = 3072  
+            # Ensure dwMaxPayloadTransferSize is set correctly
+            state.commit_control.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
+            print(f"  Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
 
-            print("\n✅ Sending COMMIT response to macOS...")
-            response = uvc_request_data()
-            response.length = sizeof(uvc_streaming_control)
-            memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print("✅ COMMIT response sent")
+            # Ensure frame interval is copied from probe
+            state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
 
-            print("Updating video format after COMMIT...")
+            print("Final COMMIT settings:")
+            print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
+            print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
 
-              # Set video format
-            if set_video_format(fd) < 0:
-                print("Failed to set video format")
-
-          
     except Exception as e:
         print(f"Error processing control data: {e}")
         return None
 
     state.current_control = None
     return None
-
 
 
 def init_video_buffers(fd):
