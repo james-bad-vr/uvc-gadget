@@ -442,7 +442,7 @@ def log_streaming_control(ctrl, prefix=""):
     print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
     print(f"  dwClockFrequency: {ctrl.dwClockFrequency}")
     print(f"  bmFramingInfo: 0x{ctrl.bmFramingInfo:02x}")
-    print(f"  bPreferredVersion: {ctrl.bPreferedVersion}")
+    print(f"  bPreferredVersion: {ctrl.bPreferredVersion}")
     print(f"  bMinVersion: {ctrl.bMinVersion}")
     print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
