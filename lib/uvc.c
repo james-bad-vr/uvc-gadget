@@ -244,15 +244,34 @@ uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
 
 	switch (req) {
 	case UVC_SET_CUR:
+		printf("SET_CUR Request\n");
+        printf("Setting control to: %s\n", 
+               cs == UVC_VS_PROBE_CONTROL ? "PROBE" : "COMMIT");
 		dev->control = cs;
 		resp->length = 34;
 		break;
 
 	case UVC_GET_CUR:
+		printf("GET_CUR Request for %s\n", 
+               cs == UVC_VS_PROBE_CONTROL ? "PROBE" : "COMMIT");
 		if (cs == UVC_VS_PROBE_CONTROL)
+		{
+			printf("Copying PROBE control data:\n");
+            printf("Before copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
 			memcpy(ctrl, &dev->probe, sizeof *ctrl);
+			printf("After copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+		}	
 		else
-			memcpy(ctrl, &dev->commit, sizeof *ctrl);
+		{
+			printf("Copying COMMIT control data:\n");
+            printf("Before copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+            memcpy(ctrl, &dev->commit, sizeof *ctrl);
+            printf("After copy - First 4 bytes: %02x %02x %02x %02x\n",
+                   resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
+		}
 		break;
 
 	case UVC_GET_MIN:
