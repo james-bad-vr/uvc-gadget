@@ -858,28 +858,27 @@ def handle_data_event(event):
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n📌 Storing COMMIT control settings")
-            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
 
-            # Ensure dwMaxPayloadTransferSize is set correctly
-            state.commit_control.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
-            print(f"✅ Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
+            # Force `dwMaxPayloadTransferSize` to a valid value before storing
+            if ctrl.dwMaxPayloadTransferSize == 0:
+                print("⚠️ Fixing dwMaxPayloadTransferSize (was 0)")
+                ctrl.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
 
-            # Ensure frame interval is copied from PROBE
-            state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
+            memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
 
             print("✅ Final COMMIT settings:")
             print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
             print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
+            print(f"  dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
 
-            # 🛠️ Explicitly send COMMIT response (fix for macOS)
+            # ✅ Explicitly respond to COMMIT
             response = uvc_request_data()
             response.length = sizeof(uvc_streaming_control)
             memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
             
-            print("\n✅ Sending COMMIT response to macOS...")
+            print("\n✅ Sending COMMIT response...")
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-
-            print("✅ COMMIT response sent - Waiting for UVC_EVENT_STREAMON...")
+            print("✅ COMMIT response sent")
 
     except Exception as e:
         print(f"❌ Error processing control data: {e}")
@@ -887,6 +886,7 @@ def handle_data_event(event):
 
     state.current_control = None
     return None
+
 
 
 def init_video_buffers(fd):
