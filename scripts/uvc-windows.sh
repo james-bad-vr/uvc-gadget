@@ -119,9 +119,11 @@ ln -sf functions/uvc.0/streaming/header/h functions/uvc.0/streaming/class/ss
 # Link UVC function to the configuration
 ln -sf functions/uvc.0 configs/c.1/
 
-###############################################################################
+# Set UVC Streaming Interface explicitly
+echo 1 | sudo tee functions/uvc.0/streaming/bInterfaceNumber > /dev/null
+echo 1 | sudo tee functions/uvc.0/control/bInterfaceNumber > /dev/null
+
 # Bind to UDC (attach gadget)
-###############################################################################
 UDC=$(ls /sys/class/udc | head -n 1)
 if [ -z "$UDC" ]; then
     echo "No UDC found. Ensure USB controller is in gadget mode."
@@ -138,7 +140,10 @@ echo "$UDC" | sudo tee UDC > /dev/null
 
 echo "Snake cam UVC gadget configured successfully with exact descriptors!"
 
-echo "Verify that 640x480 is listed below:"
+# ✅ Force the correct mode before checking formats
+sudo v4l2-ctl --set-fmt-video=width=640,height=360,pixelformat=YUYV --device /dev/video0
+
+# Verify that the format is set correctly
 v4l2-ctl --list-formats-ext -d /dev/video0
 # ioctl: VIDIOC_ENUM_FMT
 #        Type: Video Capture
