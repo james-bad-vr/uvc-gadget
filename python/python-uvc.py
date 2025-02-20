@@ -877,7 +877,7 @@ def handle_data_event(event):
             memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
             
             print("\n✅ Sending COMMIT response...")
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+            #fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT response sent")
 
     except Exception as e:
