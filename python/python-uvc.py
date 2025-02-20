@@ -852,28 +852,37 @@ def handle_data_event(event):
         print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
-            print("\nStoring PROBE control settings")
+            print("\n📌 Storing PROBE control settings")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
-            # Also update commit control to match probe
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
-            print("\nStoring COMMIT control settings")
+            print("\n📌 Storing COMMIT control settings")
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
 
             # Ensure dwMaxPayloadTransferSize is set correctly
             state.commit_control.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
-            print(f"  Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
+            print(f"✅ Updated dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
 
-            # Ensure frame interval is copied from probe
+            # Ensure frame interval is copied from PROBE
             state.commit_control.dwFrameInterval = state.probe_control.dwFrameInterval
 
-            print("Final COMMIT settings:")
+            print("✅ Final COMMIT settings:")
             print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
             print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
 
+            # 🛠️ Explicitly send COMMIT response (fix for macOS)
+            response = uvc_request_data()
+            response.length = sizeof(uvc_streaming_control)
+            memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
+            
+            print("\n✅ Sending COMMIT response to macOS...")
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+
+            print("✅ COMMIT response sent - Waiting for UVC_EVENT_STREAMON...")
+
     except Exception as e:
-        print(f"Error processing control data: {e}")
+        print(f"❌ Error processing control data: {e}")
         return None
 
     state.current_control = None
