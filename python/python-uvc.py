@@ -871,13 +871,11 @@ def handle_data_event(event):
             print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
             print(f"  dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
 
-            # ✅ Explicitly respond to COMMIT
+            # ✅ Always acknowledge COMMIT
             response = uvc_request_data()
-            response.length = sizeof(uvc_streaming_control)
-            memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
-            
-            print("\n✅ Sending COMMIT response...")
-            #fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+            response.length = 0  # Empty response for COMMIT
+            print("\n✅ Sending COMMIT acknowledgment...")
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT response sent")
 
     except Exception as e:
@@ -886,6 +884,7 @@ def handle_data_event(event):
 
     state.current_control = None
     return None
+
 
 
 
