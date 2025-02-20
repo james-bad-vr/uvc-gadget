@@ -848,72 +848,100 @@ def handle_setup_event(event):
 
 
 def handle_data_event(event):
-    print("\n" + "="*50)
-    print("UVC_EVENT_DATA")
-    print("="*50)
+    print("\n" + "="*80)
+    print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
+    print("="*80)
     
     if state.current_control is None:
-        print("No current control set")
+        print("❌ Error: No active control context")
+        print("    Current state is invalid - expecting PROBE or COMMIT control")
         return None
 
-    print("Raw event data:")
+    phase = "PROBE" if state.current_control == UVC_VS_PROBE_CONTROL else "COMMIT"
+    print(f"\n📦 Raw Event Data for {phase} Phase:")
+    print("  Complete payload (first 64 bytes):")
     raw_event_data = bytes(event.u)[:64]
-    print(' '.join(f'{b:02x}' for b in raw_event_data))
+    print("  " + ' '.join(f'{b:02x}' for b in raw_event_data))
 
-    # Get control data starting at offset 8
+    # Extract control data with clear boundary markers
     control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
     data_len = len(control_data)
     
-    print(f"\nReceived {data_len} bytes of control data:")
-    print(' '.join(f'{b:02x}' for b in control_data[:16]))
+    print(f"\n🔍 Control Parameters:")
+    print(f"  Received Length: {data_len} bytes")
+    print(f"  Expected Length: {sizeof(uvc_streaming_control)} bytes")
+    print("  Parameter Data:")
+    print("  " + ' '.join(f'{b:02x}' for b in control_data[:16]))
 
     if data_len != sizeof(uvc_streaming_control):
-        print(f"Unexpected data length: {data_len}, expected {sizeof(uvc_streaming_control)}")
+        print(f"⚠️ Length Mismatch:")
+        print(f"    Received: {data_len} bytes")
+        print(f"    Expected: {sizeof(uvc_streaming_control)} bytes")
+        print("    Aborting parameter processing")
         return None
 
     try:
+        print("\n🔄 Processing Streaming Control Parameters")
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
 
-        print("\nDEBUG - Received streaming control values:")
-        print(f"  bmHint: {ctrl.bmHint}")
-        print(f"  bFormatIndex: {ctrl.bFormatIndex}")
-        print(f"  bFrameIndex: {ctrl.bFrameIndex}")
-        print(f"  dwFrameInterval: {ctrl.dwFrameInterval}")
-        print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
-        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+        print("\n📊 Received Parameters:")
+        print(f"  Format Settings:")
+        print(f"    bmHint:                    0x{ctrl.bmHint:04x}")
+        print(f"    bFormatIndex:              {ctrl.bFormatIndex}")
+        print(f"    bFrameIndex:               {ctrl.bFrameIndex}")
+        print(f"  Timing:")
+        print(f"    dwFrameInterval:           {ctrl.dwFrameInterval} ({1000000/ctrl.dwFrameInterval:.2f} fps)")
+        print(f"  Size/Payload:")
+        print(f"    dwMaxVideoFrameSize:       {ctrl.dwMaxVideoFrameSize} bytes")
+        print(f"    dwMaxPayloadTransferSize:  {ctrl.dwMaxPayloadTransferSize} bytes")
+        print(f"  Additional Settings:")
+        print(f"    wKeyFrameRate:             {ctrl.wKeyFrameRate}")
+        print(f"    wPFrameRate:               {ctrl.wPFrameRate}")
+        print(f"    wCompQuality:              {ctrl.wCompQuality}")
+        print(f"    wCompWindowSize:           {ctrl.wCompWindowSize}")
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
-            print("\n📌 Storing PROBE control settings")
+            print("\n🔵 PROBE Phase - Storing Parameters")
+            print("  • Updating PROBE control block")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
+            print("  • Updating COMMIT control block (mirroring PROBE)")
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            print("✅ PROBE parameters stored successfully")
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
-            print("\n📌 Storing COMMIT control settings")
+            print("\n🟢 COMMIT Phase - Finalizing Parameters")
 
-            # Force `dwMaxPayloadTransferSize` to a valid value before storing
             if ctrl.dwMaxPayloadTransferSize == 0:
-                print("⚠️ Fixing dwMaxPayloadTransferSize (was 0)")
-                ctrl.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
+                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
+                print("  • Original value: 0")
+                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
+                ctrl.dwMaxPayloadTransferSize = 3072
 
+            print("  • Storing final parameters")
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
 
-            print("✅ Final COMMIT settings:")
-            print(f"  dwMaxVideoFrameSize: {state.commit_control.dwMaxVideoFrameSize}")
-            print(f"  dwFrameInterval: {state.commit_control.dwFrameInterval}")
-            print(f"  dwMaxPayloadTransferSize: {state.commit_control.dwMaxPayloadTransferSize}")
+            print("\n📈 Final Streaming Configuration:")
+            print(f"  • Frame Size:    {state.commit_control.dwMaxVideoFrameSize} bytes")
+            print(f"  • Frame Interval: {state.commit_control.dwFrameInterval} ({1000000/state.commit_control.dwFrameInterval:.2f} fps)")
+            print(f"  • Max Payload:    {state.commit_control.dwMaxPayloadTransferSize} bytes")
 
-            # ✅ Always acknowledge COMMIT
+            print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
-            response.length = 0  # Empty response for COMMIT
-            print("\n✅ Sending COMMIT acknowledgment...")
+            response.length = 0
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print("✅ COMMIT response sent")
+            print("✅ COMMIT acknowledged - Ready for streaming")
 
     except Exception as e:
-        print(f"❌ Error processing control data: {e}")
+        print("\n❌ Error Processing Control Data:")
+        print(f"  Exception: {type(e).__name__}")
+        print(f"  Message: {str(e)}")
+        print("  Aborting parameter processing")
         return None
 
+    print("\n🔄 Clearing control context")
     state.current_control = None
+
+    print("="*80 + "\n")
     return None
 
 
