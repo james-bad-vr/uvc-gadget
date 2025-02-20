@@ -272,6 +272,12 @@ uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
             printf("After copy - First 4 bytes: %02x %02x %02x %02x\n",
                    resp->data[0], resp->data[1], resp->data[2], resp->data[3]);
 		}
+		printf("Control data: bmHint=%04x, format=%d, frame=%d\n",
+			ctrl->bmHint, ctrl->bFormatIndex, ctrl->bFrameIndex);
+		printf("Frame interval=%d, keyframe=%d, pframe=%d\n",
+			ctrl->dwFrameInterval, ctrl->bKeyFrameRate, ctrl->bPFrameRate);
+		printf("Comp quality=%d, window=%d\n",
+			ctrl->wCompQuality, ctrl->wCompWindow);
 		break;
 
 	case UVC_GET_MIN:
