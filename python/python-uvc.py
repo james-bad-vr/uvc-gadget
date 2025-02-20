@@ -433,7 +433,7 @@ def set_video_format(fd):
     global current_format
     
     fmt = v4l2_format()
-    fmt.type = V4L2_BUF_TYPE_VIDEO_CAPTURE
+    fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     fmt.fmt.pix.width = 640
     fmt.fmt.pix.height = 360
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
