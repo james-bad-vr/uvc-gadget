@@ -119,9 +119,15 @@ ln -sf functions/uvc.0/streaming/header/h functions/uvc.0/streaming/class/ss
 # Link UVC function to the configuration
 ln -sf functions/uvc.0 configs/c.1/
 
+# Unbind the gadget (make configuration writable)
+echo "" | sudo tee /sys/kernel/config/usb_gadget/uvc_gadget/UDC > /dev/null
+
 # Set UVC Streaming Interface explicitly
 echo 1 | sudo tee functions/uvc.0/streaming/bInterfaceNumber > /dev/null
 echo 1 | sudo tee functions/uvc.0/control/bInterfaceNumber > /dev/null
+
+# Rebind the gadget
+echo $(ls /sys/class/udc) | sudo tee /sys/kernel/config/usb_gadget/uvc_gadget/UDC
 
 # Bind to UDC (attach gadget)
 UDC=$(ls /sys/class/udc | head -n 1)
