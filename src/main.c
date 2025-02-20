@@ -65,7 +65,6 @@ int main(int argc, char *argv[])
 
 	if (argv[optind] != NULL)
 		function = argv[optind];
-	printf("***** v1.1 *****\n");
 	printf("minimal version\n");
 	printf("configfs_parse_uvc_function\n");
 	fc = configfs_parse_uvc_function(function);
