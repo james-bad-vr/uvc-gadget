@@ -406,32 +406,42 @@ def uvc_request_name(req):
     """Convert a UVC request code to a readable string"""
     return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
-def init_streaming_control(ctrl, mode='default'):
-    """Initialize streaming control with exact same values as C code"""
+def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
+    """Initialize streaming control with dynamically calculated values."""
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
+
+    # Calculate frame interval in 100ns units
+    frame_interval = int(1e7 / fps)  # 30 FPS = 333333
+    ctrl.dwFrameInterval = frame_interval
     
-    # Standard values that work well with UVC
-    if mode == 'min':
-        ctrl.dwFrameInterval = 333333  # 30fps
-    elif mode == 'max':
-        ctrl.dwFrameInterval = 333333  # 30fps 
-    else:
-        ctrl.dwFrameInterval = 333333  # 30fps
-        
+    # Calculate max video frame size dynamically
+    bytes_per_pixel = 2  # YUYV format
+    ctrl.dwMaxVideoFrameSize = width * height * bytes_per_pixel
+
+    # USB packet size calculation (use 3072 for USB 2.0 compatibility)
+    max_payload_size = 3072  # Safe default for USB 2.0
+    ctrl.dwMaxPayloadTransferSize = max_payload_size
+
+    # Set additional parameters
     ctrl.wKeyFrameRate = 0
     ctrl.wPFrameRate = 0
     ctrl.wCompQuality = 0
     ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # Exact size for YUYV
-    ctrl.dwMaxPayloadTransferSize = 3072
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
     ctrl.bPreferredVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
+
+    print(f"Initialized Streaming Control:")
+    print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
+    print(f"  Frame interval: {ctrl.dwFrameInterval} (100ns units)")
+    print(f"  Max payload size: {ctrl.dwMaxPayloadTransferSize}")
+
+
 
 def log_streaming_control(ctrl, prefix=""):
     """Helper to log UVC streaming control parameters"""
@@ -800,11 +810,11 @@ def handle_setup_event(event):
                     if cs == UVC_VS_PROBE_CONTROL:
                         print("  👈 Returning PROBE control values")
                         ctrl = state.probe_control
-                        log_streaming_control(ctrl, "📊 Current PROBE Values")
+                        log_streaming_control(state.probe_control, "📊 Current PROBE Values")
                     elif cs == UVC_VS_COMMIT_CONTROL:
                         print("  👈 Returning COMMIT control values")
                         ctrl = state.commit_control
-                        log_streaming_control(ctrl, "📊 Current COMMIT Values")
+                        log_streaming_control(state.commit_control, "📊 Current COMMIT Values")
 
                     # Ensure that we return the committed values correctly
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
