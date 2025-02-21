@@ -342,6 +342,11 @@ def main():
         if set_video_format(fd) < 0:
             print("Failed to set video format")
             return
+
+        # ✅ Initialize probe and commit control (Matches C `uvc_events_init`)
+        print("\n🔧 Initializing Streaming Control Defaults")
+        init_streaming_control(state.probe_control)
+        init_streaming_control(state.commit_control)
         
         # Subscribe to all events
         if subscribe_events(fd) < 0:
@@ -349,6 +354,7 @@ def main():
             return
 
         print("Device ready - waiting for events...")
+
         epoll = select.epoll()
         epoll.register(fd, select.EPOLLPRI)
 
@@ -1064,8 +1070,8 @@ EVENT_HANDLERS = {
 def subscribe_events(fd):
     """Subscribe to all UVC events"""
     events = [
-        UVC_EVENT_CONNECT,
-        UVC_EVENT_DISCONNECT,
+        #UVC_EVENT_CONNECT,
+        #UVC_EVENT_DISCONNECT,
         UVC_EVENT_SETUP,
         UVC_EVENT_DATA,
         UVC_EVENT_STREAMON,
