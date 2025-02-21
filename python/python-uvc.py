@@ -870,25 +870,29 @@ def handle_data_event(event):
     print("\n" + "="*80)
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
-
+    
     if state.current_control is None:
-        print("❌ ERROR: No active control context!")
+        print("❌ Error: No active control context")
+        print("    Current state is invalid - expecting PROBE or COMMIT control")
         return None
 
     phase = "PROBE" if state.current_control == UVC_VS_PROBE_CONTROL else "COMMIT"
     print(f"\n📦 Raw Event Data for {phase} Phase:")
+    print("  Complete payload (first 64 bytes):")
     raw_event_data = bytes(event.u)[:64]
     print("  " + ' '.join(f'{b:02x}' for b in raw_event_data))
 
     control_data = raw_event_data[8:8 + sizeof(uvc_streaming_control)]
     data_len = len(control_data)
-
+    
     print(f"\n🔍 Control Parameters:")
     print(f"  Received Length: {data_len} bytes")
     print(f"  Expected Length: {sizeof(uvc_streaming_control)} bytes")
+    print("  Parameter Data:")
+    print("  " + ' '.join(f'{b:02x}' for b in control_data[:16]))
 
     if data_len != sizeof(uvc_streaming_control):
-        print(f"⚠️ ERROR: Length Mismatch - Received {data_len}, Expected {sizeof(uvc_streaming_control)}")
+        print(f"⚠️ Length Mismatch - Received: {data_len}, Expected: {sizeof(uvc_streaming_control)}")
         return None
 
     try:
@@ -896,59 +900,45 @@ def handle_data_event(event):
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
         log_streaming_control(ctrl, "📊 Received Parameters")
 
-        # 🛠 Fix: Force `dwMaxPayloadTransferSize` to 1024 for macOS compatibility
-        if ctrl.dwMaxPayloadTransferSize == 0 or ctrl.dwMaxPayloadTransferSize > 3072:
-            print("⚠️ Invalid `dwMaxPayloadTransferSize` detected. Setting to **1024** bytes (macOS safe default).")
-            ctrl.dwMaxPayloadTransferSize = 1024
+        # Calculate and log FPS
+        fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
+        print(f"\n⏱️ Calculated FPS: {fps:.2f}")
 
-        # 🛠 Fix: Ensure `dwFrameInterval` is **correct**
-        if ctrl.dwFrameInterval == 0 or ctrl.dwFrameInterval > 10000000:
-            print("⚠️ Invalid `dwFrameInterval` detected. Resetting to **333333** (30 FPS).")
-            ctrl.dwFrameInterval = 333333
-
-        # 🔵 Handle PROBE phase
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\n🔵 PROBE Phase - Storing Parameters")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
             memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
             log_streaming_control(state.probe_control, "✅ Updated PROBE State")
-
-        # 🟢 Handle COMMIT phase
+            
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n🟢 COMMIT Phase - Finalizing Parameters")
+
+            if ctrl.dwMaxPayloadTransferSize == 0:
+                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
+                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
+                ctrl.dwMaxPayloadTransferSize = 3072
+
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
 
-            # **New Fix: Delayed acknowledgment**
-            print("\n🤝 Delaying COMMIT Acknowledgment by 100ms for macOS")
-            time.sleep(0.1)
-
+            print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
             response.length = 0
-            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n")
+            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
 
-            # **New Fix: Force GET_CUR COMMIT after SET_CUR COMMIT**
-            print("\n🔄 Sending forced GET_CUR COMMIT response")
-            response = uvc_request_data()
-            memmove(addressof(response.data), addressof(state.commit_control), sizeof(uvc_streaming_control))
-            response.length = sizeof(uvc_streaming_control)
-            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n")
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print("✅ Extra GET_CUR COMMIT response sent.")
-
     except Exception as e:
-        print("\n❌ ERROR Processing Control Data:")
+        print("\n❌ Error Processing Control Data:")
         print(f"  Exception: {type(e).__name__}")
         print(f"  Message: {str(e)}")
         return None
 
     print("\n🔄 Clearing control context")
     state.current_control = None
+
     print("="*80 + "\n")
     return None
-
 
 
 
