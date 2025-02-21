@@ -411,31 +411,31 @@ def uvc_request_name(req):
     return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
 def init_streaming_control(ctrl, mode='default'):
-    """Initialize streaming control with exact same values as C code"""
+    """Initialize streaming control to support 1920x1080"""
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
     
-    # Standard values that work well with UVC
     if mode == 'min':
-        ctrl.dwFrameInterval = 333333  # 30fps
+        ctrl.dwFrameInterval = 500000  # 20fps
     elif mode == 'max':
         ctrl.dwFrameInterval = 333333  # 30fps 
     else:
-        ctrl.dwFrameInterval = 333333  # 30fps
-        
+        ctrl.dwFrameInterval = 500000  # 20fps (macOS default)
+
     ctrl.wKeyFrameRate = 0
     ctrl.wPFrameRate = 0
     ctrl.wCompQuality = 0
     ctrl.wCompWindowSize = 0
     ctrl.wDelay = 0
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # Exact size for YUYV
-    ctrl.dwMaxPayloadTransferSize = 3072
+    ctrl.dwMaxVideoFrameSize = 1920 * 1080 * 2  # Updated for 1920x1080
+    ctrl.dwMaxPayloadTransferSize = 6144  # Larger packets needed
     ctrl.dwClockFrequency = 48000000
     ctrl.bmFramingInfo = 3
     ctrl.bPreferredVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
+
 
 def log_streaming_control(ctrl, prefix=""):
     """Helper to log UVC streaming control parameters"""
@@ -459,25 +459,25 @@ def log_streaming_control(ctrl, prefix=""):
 
     
 def set_video_format(fd):
-    """Set video format to YUYV 640x360"""
+    """Set video format to YUYV 1920x1080"""
     print("\nSetting video format")
     global current_format
-    
+
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.fmt.pix.width = 640
-    fmt.fmt.pix.height = 360
+    fmt.fmt.pix.width = 1920
+    fmt.fmt.pix.height = 1080
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
     fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
     fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
     fmt.fmt.pix.xfer_func = V4L2_XFER_FUNC_SRGB
-    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601  # Standard for YUYV
+    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601
     fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
-    
+
     try:
-        print("#### Calling ioctl: VIDIOC_S_FMT\n");
+        print("#### Calling ioctl: VIDIOC_S_FMT\n")
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
         print("Video format set successfully:")
         print(f"  Width: {fmt.fmt.pix.width}")
@@ -485,12 +485,12 @@ def set_video_format(fd):
         print(f"  Pixel Format: {hex(fmt.fmt.pix.pixelformat)}")
         print(f"  Bytes per line: {fmt.fmt.pix.bytesperline}")
         print(f"  Size image: {fmt.fmt.pix.sizeimage}")
-        print(f"  Colorspace: {fmt.fmt.pix.colorspace}")
         current_format = fmt.fmt.pix  # Store the current format
         return True
     except Exception as e:
         print(f"Failed to set video format: {e}")
         return False
+
 
 def handle_request(fd, ctrl, req, response):
     print(f"Handling bRequest: 0x{req.bRequest:02x}")
@@ -699,31 +699,25 @@ def streaming_thread(fps):
     print(f"Streaming ended - Average FPS: {frame_count / (time.time() - start_time):.1f}")
 
 def generate_test_pattern(mm, width, height, offset=0):
-    """Optimized test pattern generation with explicit buffer layout"""
-    stride = width * 2  # YUY2 is 2 bytes per pixel
-    total_size = stride * height
-    pattern = bytearray(total_size)
-    
-    # Fill pattern line by line with proper stride
+    """Generate test pattern for 1920x1080"""
+    bytes_per_line = width * 2  # YUY2 is 2 bytes per pixel
+    total_size = bytes_per_line * height
+    pattern = bytearray(total_size)  # Allocate full buffer
+    square_size = 64  # Keeping the checkerboard square size
+
     for y in range(height):
-        row_offset = y * stride
-        for x in range(0, stride, 4):  # Process 2 pixels (4 bytes) at a time
+        row_offset = y * bytes_per_line
+        for x in range(0, bytes_per_line, 4):
             pixel_x = x // 2
             shifted_x = (pixel_x + offset) % width
-            # Checkerboard based on coordinates
-            is_white = ((y // 64) + (shifted_x // 64)) % 2 == 0
-            
-            # YUY2 pattern: Y1 U Y2 V
-            if is_white:
-                # White in YUV space
-                pattern[row_offset + x:row_offset + x + 4] = bytes([235, 128, 235, 128])
-            else:
-                # Gray in YUV space
-                pattern[row_offset + x:row_offset + x + 4] = bytes([128, 128, 128, 128])
+            is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
+            color = WHITE if is_white else GRAY
+            pattern[row_offset + x:row_offset + x + 4] = color.to_bytes(4, byteorder='little')
 
     mm.seek(0)
     mm.write(bytes(pattern))
-    return total_size
+    return total_size  # Return correct buffer size
+
 
 def handle_streamoff_event(event):
     """Handle UVC_EVENT_STREAMOFF"""
@@ -941,94 +935,51 @@ def handle_data_event(event):
     return None
 
 
-
-
 def init_video_buffers(fd):
-    """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
+    """Allocate video buffers for 1920x1080"""
     print("\nInitializing video buffers")
-    
-    # Request buffers
+
     req = v4l2_requestbuffers()
     req.count = 4
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     req.memory = V4L2_MEMORY_MMAP
-    
+
     try:
-        print("#### Calling ioctl: VIDIOC_REQBUFS\n");
+        print("#### Calling ioctl: VIDIOC_REQBUFS\n")
         fcntl.ioctl(fd, VIDIOC_REQBUFS, req)
     except Exception as e:
         print(f"Failed to request buffers: {e}")
         return None
-        
+
     print(f"{req.count} buffers requested.")
-    
-    # Pre-generate 8 patterns with different offsets
-    patterns = []
-    for i in range(8):
-        pattern = bytearray()
-        bytes_per_line = current_format.width * 2
-        square_size = 64
-        offset = (i * current_format.width) // 8  # Divide width into 8 steps
-        
-        for y in range(current_format.height):
-            for x in range(0, bytes_per_line, 4):
-                pixel_x = x // 2
-                shifted_x = (pixel_x + offset) % current_format.width
-                is_white = ((y // square_size) + (shifted_x // square_size)) % 2 == 0
-                color = WHITE if is_white else GRAY
-                pattern.extend(color.to_bytes(4, byteorder='little'))
-        
-        patterns.append(bytes(pattern))
-    
-    print(f"Generated {len(patterns)} patterns")
-    
-    # Allocate buffer objects
+
     buffers = []
+    buffer_size = 1920 * 1080 * 2  # Updated for 1920x1080 resolution
+
     for i in range(req.count):
-        # Query each buffer
         buf = v4l2_buffer()
         buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
         buf.memory = V4L2_MEMORY_MMAP
         buf.index = i
-        
+
         try:
-            print("#### Calling ioctl: VIDIOC_QUERYBUF\n");
+            print("#### Calling ioctl: VIDIOC_QUERYBUF\n")
             fcntl.ioctl(fd, VIDIOC_QUERYBUF, buf)
         except Exception as e:
             print(f"Failed to query buffer {i}: {e}")
             return None
-            
-        # mmap the buffer
+
         try:
-            mm = mmap.mmap(fd, buf.length, 
-                          flags=mmap.MAP_SHARED,
-                          prot=mmap.PROT_READ | mmap.PROT_WRITE,
-                          offset=buf.m.offset)
-                          
-            print(f"Buffer {i}:")
-            print(f"  Mapped at offset {buf.m.offset}")
-            print(f"  Length: {buf.length}")
-            
-            # Write initial pattern
-            mm.seek(0)
-            mm.write(patterns[0])
-            
-            buffers.append({
-                'index': i,
-                'length': buf.length,
-                'mmap': mm,
-                'start': mm,
-                'pattern_size': len(patterns[0]),
-                'patterns': patterns  # Store all patterns with the buffer
-            })
+            mm = mmap.mmap(fd, buffer_size, flags=mmap.MAP_SHARED,
+                           prot=mmap.PROT_READ | mmap.PROT_WRITE, offset=buf.m.offset)
+            print(f"Buffer {i}: Mapped at offset {buf.m.offset}, Length: {buffer_size}")
+            buffers.append({'index': i, 'length': buffer_size, 'mmap': mm})
         except Exception as e:
             print(f"Failed to mmap buffer {i}: {e}")
-            # Clean up previously mapped buffers
-            for b in buffers:
-                b['mmap'].close()
             return None
-    
+
     return buffers
+
 
 def queue_initial_buffers(fd, buffers, width, height):
     """Queue initial buffers with test pattern"""
@@ -1110,74 +1061,40 @@ def stream_off(fd):
 def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
     print("\nUVC_EVENT_STREAMON")
-    global state
     
     try:
-        # Start the video stream
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-        print("Starting video stream...")
-        print("#### Calling ioctl: VIDIOC_STREAMON\n");
+        print("#### Calling ioctl: VIDIOC_STREAMON\n")
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
-        
-        if not current_format or not buffers:
-            print("Error: Missing format or buffers")
-            return None
-            
-        print(f"\nCurrent format:")
-        print(f"  Width: {current_format.width}")
-        print(f"  Height: {current_format.height}")
-        print(f"  Pixel format: {hex(current_format.pixelformat)}")
-        print(f"  Bytes per line: {current_format.bytesperline}")
-        print(f"  Size image: {current_format.sizeimage}")
-        
+
         # Use the committed frame interval for FPS
-        frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
-        fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
+        frame_interval_ns = state.commit_control.dwFrameInterval * 100
+        fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 20  # Default 20fps
+
         print(f"\nUsing committed settings:")
         print(f"  Frame interval: {frame_interval_ns}ns")
         print(f"  Target FPS: {fps}")
-        
-        # Queue initial buffers with timing information
+
+        # Queue initial buffers
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
-            
-            # Fill buffer with test pattern
-            bytes_used = generate_test_pattern(
-                buf['mmap'], 
-                current_format.width, 
-                current_format.height
-            )
+            bytes_used = generate_test_pattern(buf['mmap'], 1920, 1080)
             
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
-            v4l2_buf.timestamp.tv_sec = 0
-            v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
-            
-            try:
-                print("#### Calling ioctl: VIDIOC_QBUF\n");
-                fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
-                print(f"  Successfully queued buffer {buf['index']}")
-            except Exception as e:
-                print(f"  Failed to queue buffer: {e}")
-                print(f"  Error details: {type(e).__name__}")
-        
-        # Start streaming thread with timing control
+
+            print("#### Calling ioctl: VIDIOC_QBUF\n")
+            fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
+
         state.streaming = True
-        print("\nStarting streaming thread...")
-        import threading
-        thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
-        thread.start()
-        print("Streaming thread started with ID:", thread.ident)
-            
+
     except Exception as e:
         print(f"Failed to start stream: {e}")
-        print(f"Error details: {type(e).__name__}")
-    
-    return None
+
 
 def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
