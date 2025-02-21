@@ -87,6 +87,8 @@ v4l2_enum_frame_intervals(struct v4l2_device *dev, struct v4l2_format_desc *form
 		ivalenum.pixel_format = format->pixelformat;
 		ivalenum.width = frame->min_width;
 		ivalenum.height = frame->min_height;
+
+		printf("#### Calling ioctl: VIDIOC_ENUM_FRAMEINTERVALS\n");
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FRAMEINTERVALS, &ivalenum);
 		
 		if (ret < 0)
@@ -148,6 +150,7 @@ static int v4l2_enum_frame_sizes(struct v4l2_device *dev, struct v4l2_format_des
 		frmenum.index = i;
 		frmenum.pixel_format = format->pixelformat;
 
+		printf("#### Calling ioctl: VIDIOC_ENUM_FRAMESIZES\n");
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FRAMESIZES, &frmenum);
 		
 		if (ret < 0)
@@ -219,6 +222,7 @@ static int v4l2_enum_formats(struct v4l2_device *dev)
 		fmtenum.index = i;
 		fmtenum.type = dev->type;
 
+		printf("#### Calling ioctl: VIDIOC_ENUM_FMT\n");
 		ret = ioctl(dev->fd, VIDIOC_ENUM_FMT, &fmtenum);
 		if (ret < 0)
 			break;
@@ -288,6 +292,7 @@ struct v4l2_device *v4l2_open(const char *devname)
 	}
 
 	memset(&cap, 0, sizeof cap);
+	printf("#### Calling ioctl: VIDIOC_QUERYCAP\n");
 	ret = ioctl(dev->fd, VIDIOC_QUERYCAP, &cap); //equivalent to command line: v4l2-ctl --device=/dev/video0 --all
 	
 	if (ret < 0)
@@ -399,6 +404,7 @@ int v4l2_get_control(struct v4l2_device *dev, unsigned int id, int32_t *value)
 
 	ctrl.id = id;
 
+	printf("#### Calling ioctl: VIDIOC_G_CTRL\n");
 	ret = ioctl(dev->fd, VIDIOC_G_CTRL, &ctrl);
 	
 	if (ret < 0)
@@ -419,6 +425,7 @@ int v4l2_set_control(struct v4l2_device *dev, unsigned int id, int32_t *value)
 	ctrl.id = id;
 	ctrl.value = *value;
 
+	printf("#### Calling ioctl: VIDIOC_S_CTRL\n");
 	ret = ioctl(dev->fd, VIDIOC_S_CTRL, &ctrl);
 	
 	if (ret < 0)
@@ -441,6 +448,7 @@ int v4l2_get_controls(struct v4l2_device *dev, unsigned int count,
 	controls.count = count;
 	controls.controls = ctrls;
 
+	printf("#### Calling ioctl: VIDIOC_G_EXT_CTRLS\n");
 	ret = ioctl(dev->fd, VIDIOC_G_EXT_CTRLS, &controls);
 	
 	if (ret < 0)
@@ -459,6 +467,7 @@ int v4l2_set_controls(struct v4l2_device *dev, unsigned int count,
 	controls.count = count;
 	controls.controls = ctrls;
 
+	printf("#### Calling ioctl: VIDIOC_S_EXT_CTRLS\n");
 	ret = ioctl(dev->fd, VIDIOC_S_EXT_CTRLS, &controls);
 	
 	if (ret < 0)
@@ -479,6 +488,7 @@ int v4l2_get_crop(struct v4l2_device *dev, struct v4l2_rect *rect)
 	memset(&crop, 0, sizeof crop);
 	crop.type = dev->type;
 
+	printf("#### Calling ioctl: VIDIOC_G_CROP\n");
 	ret = ioctl(dev->fd, VIDIOC_G_CROP, &crop);
 	
 	if (ret < 0)
@@ -502,6 +512,7 @@ int v4l2_set_crop(struct v4l2_device *dev, struct v4l2_rect *rect)
 	crop.type = dev->type;
 	crop.c = *rect;
 
+	printf("#### Calling ioctl: VIDIOC_S_CROP\n");
 	ret = ioctl(dev->fd, VIDIOC_S_CROP, &crop);
 	
 	if (ret < 0)
@@ -524,6 +535,7 @@ int v4l2_get_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	memset(&fmt, 0, sizeof fmt);
 	fmt.type = dev->type;
 
+	printf("#### Calling ioctl: VIDIOC_G_FMT\n");
 	ret = ioctl(dev->fd, VIDIOC_G_FMT, &fmt);
 	
 	if (ret < 0)
@@ -561,6 +573,8 @@ int v4l2_set_format(struct v4l2_device *dev, struct v4l2_pix_format *format)
 	printf("  Field: %d\n", fmt.fmt.pix.field);
 	printf("  Size Image: %u\n", fmt.fmt.pix.sizeimage);
 
+
+	printf("#### Calling ioctl: VIDIOC_S_FMT\n");
 	ret = ioctl(dev->fd, VIDIOC_S_FMT, &fmt);
 
 	if (ret < 0)
@@ -596,6 +610,7 @@ int v4l2_set_frame_rate(struct v4l2_device *dev, unsigned int fps)
 	parm.parm.capture.timeperframe.numerator = 1;
 	parm.parm.capture.timeperframe.denominator = fps;
 
+	printf("#### Calling ioctl: VIDIOC_S_PARM\n");
 	ret = ioctl(dev->fd, VIDIOC_S_PARM, &parm);
 
 	if (ret < 0)
@@ -639,6 +654,7 @@ int v4l2_alloc_buffers(struct v4l2_device *dev, enum v4l2_memory memtype,
 	rb.type = dev->type;
 	rb.memory = memtype;
 
+	printf("#### Calling ioctl: VIDIOC_REQBUFS\n");
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	
 	if (ret < 0)
@@ -724,6 +740,7 @@ int v4l2_free_buffers(struct v4l2_device *dev)
 	rb.type = dev->type;
 	rb.memory = dev->memtype;
 
+	printf("#### Calling ioctl: VIDIOC_REQBUFS\n");
 	ret = ioctl(dev->fd, VIDIOC_REQBUFS, &rb);
 	
 	if (ret < 0)
@@ -763,6 +780,7 @@ int v4l2_export_buffers(struct v4l2_device *dev)
 			.memory = dev->memtype,
 		};
 
+		printf("#### Calling ioctl: VIDIOC_QUERYBUF\n");
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		
 		if (ret < 0)
@@ -771,6 +789,7 @@ int v4l2_export_buffers(struct v4l2_device *dev)
 			return -errno;
 		}
 
+		printf("#### Calling ioctl: VIDIOC_EXPBUF\n");
 		ret = ioctl(dev->fd, VIDIOC_EXPBUF, &expbuf);
 		
 		if (ret < 0)
@@ -812,6 +831,7 @@ int v4l2_import_buffers(struct v4l2_device *dev,
 		
 		int fd;
 
+		printf("#### Calling ioctl: VIDIOC_QUERYBUF\n");
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		
 		if (ret < 0)
@@ -860,6 +880,7 @@ int v4l2_mmap_buffers(struct v4l2_device *dev)
 		};
 		void *mem;
 
+		printf("#### Calling ioctl: VIDIOC_QUERYBUF\n");
 		ret = ioctl(dev->fd, VIDIOC_QUERYBUF, &buf);
 		if (ret < 0)
 		{
@@ -893,6 +914,7 @@ int v4l2_dequeue_buffer(struct v4l2_device *dev, struct video_buffer *buffer)
 	buf.type = dev->type;
 	buf.memory = dev->memtype;
 
+	printf("#### Calling ioctl: VIDIOC_DQBUF\n");
 	ret = ioctl(dev->fd, VIDIOC_DQBUF, &buf);
 	
 	if (ret < 0)
@@ -930,6 +952,7 @@ int v4l2_queue_buffer(struct v4l2_device *dev, struct video_buffer *buffer)
 	if (dev->type == V4L2_BUF_TYPE_VIDEO_OUTPUT)
 		buf.bytesused = buffer->bytesused;
 
+	printf("#### Calling ioctl: VIDIOC_QBUF\n");
 	ret = ioctl(dev->fd, VIDIOC_QBUF, &buf);
 	
 	if (ret < 0)
@@ -950,6 +973,7 @@ int v4l2_stream_on(struct v4l2_device *dev)
 	int type = dev->type;
 	int ret;
 
+	printf("#### Calling ioctl: VIDIOC_STREAMON\n");
 	ret = ioctl(dev->fd, VIDIOC_STREAMON, &type);
 	
 	if (ret < 0)
@@ -963,6 +987,7 @@ int v4l2_stream_off(struct v4l2_device *dev)
 	int type = dev->type;
 	int ret;
 
+	printf("#### Calling ioctl: VIDIOC_STREAMOFF\n");
 	ret = ioctl(dev->fd, VIDIOC_STREAMOFF, &type);
 	
 	if (ret < 0)
