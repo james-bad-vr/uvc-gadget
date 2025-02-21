@@ -230,8 +230,6 @@ uvc_events_process_streaming(struct uvc_device *dev, uint8_t req, uint8_t cs,
            cs == UVC_VS_COMMIT_CONTROL ? "COMMIT" : "UNKNOWN",
            cs);
 
-
-
 	 if (cs != UVC_VS_PROBE_CONTROL && cs != UVC_VS_COMMIT_CONTROL) {
         printf("Invalid control selector, ignoring request\n");
         return;
@@ -421,12 +419,15 @@ static void uvc_events_process(void *d)
     printf("\nStructure sizes:\n");
     printf("v4l2_event size: %zu bytes\n", sizeof(struct v4l2_event));
     printf("v4l2_event.u.data size: %zu bytes\n", sizeof(v4l2_event.u.data));
-    
+
+    printf("Calling ioctl: VIDIOC_DQEVENT\n");
     ret = ioctl(dev->vdev->fd, VIDIOC_DQEVENT, &v4l2_event);
     
     if (ret < 0) {
         printf("VIDIOC_DQEVENT failed: %s (%d)\n", strerror(errno), errno);
         return;
+    } else {
+        printf("VIDIOC_DQEVENT succeeded\n");
     }
 
     // Print event details
@@ -435,7 +436,7 @@ static void uvc_events_process(void *d)
     printf("event.pending: %u\n", v4l2_event.pending);
     printf("event.sequence: %u\n", v4l2_event.sequence);
     printf("event.id: %u\n", v4l2_event.id);
-    
+
     // Print first few bytes of data in hex
     printf("event.u.data (first 16 bytes): ");
     for (int i = 0; i < 16; i++) {
@@ -474,15 +475,18 @@ static void uvc_events_process(void *d)
 			return;
 	}
 
+    printf("Calling ioctl: UVCIOC_SEND_RESPONSE\n");
 	ret = ioctl(dev->vdev->fd, UVCIOC_SEND_RESPONSE, &resp);
 	
 	if (ret < 0)
 	{
 		printf("UVCIOC_SEND_RESPONSE failed: %s (%d)\n",
 		       strerror(errno), errno);
-		return;
-	}
+	} else {
+        printf("UVCIOC_SEND_RESPONSE succeeded\n");
+    }
 }
+
 
 /* ---------------------------------------------------------------------------
  * Initialization and setup
@@ -491,6 +495,7 @@ static void uvc_events_process(void *d)
 void uvc_events_init(struct uvc_device *dev, struct events *events)
 {
     struct v4l2_event_subscription sub;
+    int ret;
     
     printf("uvc_events_init\n");
     printf("VIDIOC_SUBSCRIBE_EVENT = 0x%08x\n", VIDIOC_SUBSCRIBE_EVENT);
@@ -502,33 +507,54 @@ void uvc_events_init(struct uvc_device *dev, struct events *events)
     printf("Size of v4l2_event_subscription struct: %zu bytes\n", sizeof(struct v4l2_event_subscription));
     
     memset(&sub, 0, sizeof sub);
+
     sub.type = UVC_EVENT_SETUP;
     printf("UVC_EVENT_SETUP = %d (0x%08x)\n", sub.type, sub.type);
-    printf("Subscribing to SETUP - sub struct: type=%u, id=%u, flags=%u\n", 
-           sub.type, sub.id, sub.flags);
-    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    printf("Subscribing to SETUP - sub struct: type=%u, id=%u, flags=%u\n", sub.type, sub.id, sub.flags);
+    
+    printf("Calling ioctl: VIDIOC_SUBSCRIBE_EVENT for UVC_EVENT_SETUP\n");
+    ret = ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    if (ret < 0)
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_SETUP) failed: %s (%d)\n", strerror(errno), errno);
+    else
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_SETUP) succeeded\n");
 
     sub.type = UVC_EVENT_DATA;
     printf("UVC_EVENT_DATA = %d (0x%08x)\n", sub.type, sub.type);
-    printf("Subscribing to DATA - sub struct: type=%u, id=%u, flags=%u\n", 
-           sub.type, sub.id, sub.flags);
-    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    printf("Subscribing to DATA - sub struct: type=%u, id=%u, flags=%u\n", sub.type, sub.id, sub.flags);
+
+    printf("Calling ioctl: VIDIOC_SUBSCRIBE_EVENT for UVC_EVENT_DATA\n");
+    ret = ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    if (ret < 0)
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_DATA) failed: %s (%d)\n", strerror(errno), errno);
+    else
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_DATA) succeeded\n");
 
     sub.type = UVC_EVENT_STREAMON;
     printf("UVC_EVENT_STREAMON = %d (0x%08x)\n", sub.type, sub.type);
-    printf("Subscribing to STREAMON - sub struct: type=%u, id=%u, flags=%u\n", 
-           sub.type, sub.id, sub.flags);
-    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    printf("Subscribing to STREAMON - sub struct: type=%u, id=%u, flags=%u\n", sub.type, sub.id, sub.flags);
+
+    printf("Calling ioctl: VIDIOC_SUBSCRIBE_EVENT for UVC_EVENT_STREAMON\n");
+    ret = ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    if (ret < 0)
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_STREAMON) failed: %s (%d)\n", strerror(errno), errno);
+    else
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_STREAMON) succeeded\n");
 
     sub.type = UVC_EVENT_STREAMOFF;
     printf("UVC_EVENT_STREAMOFF = %d (0x%08x)\n", sub.type, sub.type);
-    printf("Subscribing to STREAMOFF - sub struct: type=%u, id=%u, flags=%u\n", 
-           sub.type, sub.id, sub.flags);
-    ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    printf("Subscribing to STREAMOFF - sub struct: type=%u, id=%u, flags=%u\n", sub.type, sub.id, sub.flags);
 
-    events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION,
-            uvc_events_process, dev);
+    printf("Calling ioctl: VIDIOC_SUBSCRIBE_EVENT for UVC_EVENT_STREAMOFF\n");
+    ret = ioctl(dev->vdev->fd, VIDIOC_SUBSCRIBE_EVENT, &sub);
+    if (ret < 0)
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_STREAMOFF) failed: %s (%d)\n", strerror(errno), errno);
+    else
+        printf("VIDIOC_SUBSCRIBE_EVENT (UVC_EVENT_STREAMOFF) succeeded\n");
+
+    events_watch_fd(events, dev->vdev->fd, EVENT_EXCEPTION, uvc_events_process, dev);
 }
+
 
 void uvc_set_config(struct uvc_device *dev, struct uvc_function_config *fc)
 {
