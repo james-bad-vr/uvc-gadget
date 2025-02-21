@@ -336,6 +336,7 @@ def main():
         
         # Query device capabilities
         cap = v4l2_capability()
+        print("#### Calling ioctl: VIDIOC_QUERYCAP\n");
         fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
         print(f"Capabilities: 0x{cap.capabilities:08x}")
 
@@ -367,6 +368,7 @@ def main():
                 print(f"\nReceived event with mask: 0x{event_mask:x}")
                 event = v4l2_event()
                 try:
+                    print("#### Calling ioctl: VIDIOC_DQEVENT\n");
                     fcntl.ioctl(fd, VIDIOC_DQEVENT, event)
                     print(f"Event type: 0x{event.type:08x}")
                     handler = EVENT_HANDLERS.get(event.type)
@@ -375,6 +377,15 @@ def main():
                         response = handler(event)
                         if response:
                             print("Got response, sending...")
+
+                            #Log the response before sending
+                            print(f"resp.length: {response.length}")
+
+                            print("resp.data (first 16 bytes): ", end="")
+                            for i in range(min(16, response.length)):
+                                print(f"{response.data[i]:02x} ", end="")
+
+                            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
                             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
                         else:
                             print("Handler returned no response")
@@ -466,6 +477,7 @@ def set_video_format(fd):
     fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
     
     try:
+        print("#### Calling ioctl: VIDIOC_S_FMT\n");
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
         print("Video format set successfully:")
         print(f"  Width: {fmt.fmt.pix.width}")
@@ -547,6 +559,7 @@ def handle_streamon_event(event):
         # Start the video stream
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
         print("Starting video stream...")
+        print("#### Calling ioctl: VIDIOC_STREAMON\n");
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
         
@@ -586,6 +599,7 @@ def handle_streamon_event(event):
             v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
             
             try:
+                print("#### Calling ioctl: VIDIOC_QBUF\n");
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
                 print(f"  Successfully queued buffer {buf['index']}")
             except Exception as e:
@@ -643,6 +657,7 @@ def streaming_thread(fps):
             buf.memory = V4L2_MEMORY_MMAP
             
             try:
+                print("#### Calling ioctl: VIDIOC_DQBUF\n");
                 fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
             except OSError as e:
                 if e.errno == errno.EAGAIN:
@@ -665,6 +680,7 @@ def streaming_thread(fps):
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
             try:
+                print("#### Calling ioctl: VIDIOC_QBUF\n");
                 fcntl.ioctl(fd, VIDIOC_QBUF, buf)
                 frame_count += 1
                 frames_since_stats += 1
@@ -714,6 +730,7 @@ def handle_streamoff_event(event):
     print("Handling STREAMOFF event")
     try:
         buf_type = c_uint32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        print("#### Calling ioctl: VIDIOC_STREAMOFF\n");
         fcntl.ioctl(fd, VIDIOC_STREAMOFF, buf_type)
         state.streaming = False
         print("Stream stopped successfully")
@@ -907,6 +924,7 @@ def handle_data_event(event):
             print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
             response.length = 0
+            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
 
@@ -936,6 +954,7 @@ def init_video_buffers(fd):
     req.memory = V4L2_MEMORY_MMAP
     
     try:
+        print("#### Calling ioctl: VIDIOC_REQBUFS\n");
         fcntl.ioctl(fd, VIDIOC_REQBUFS, req)
     except Exception as e:
         print(f"Failed to request buffers: {e}")
@@ -973,6 +992,7 @@ def init_video_buffers(fd):
         buf.index = i
         
         try:
+            print("#### Calling ioctl: VIDIOC_QUERYBUF\n");
             fcntl.ioctl(fd, VIDIOC_QUERYBUF, buf)
         except Exception as e:
             print(f"Failed to query buffer {i}: {e}")
@@ -1024,6 +1044,7 @@ def queue_initial_buffers(fd, buffers, width, height):
         v4l2_buf.bytesused = bytes_used
         
         try:
+            print("#### Calling ioctl: VIDIOC_QBUF\n");
             fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
             print(f"Queued buffer {buf['index']}")
         except Exception as e:
@@ -1054,6 +1075,7 @@ def subscribe_events(fd):
     for event_type in events:
         sub = v4l2_event_subscription(type=event_type)
         try:
+            print("#### Calling ioctl: VIDIOC_SUBSCRIBE_EVENT\n");
             fcntl.ioctl(fd, VIDIOC_SUBSCRIBE_EVENT, sub)
             print(f"Subscribed to event 0x{event_type:08x}")
         except Exception as e:
@@ -1065,6 +1087,7 @@ def stream_on(fd):
     """Start video streaming"""
     buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
     try:
+        print("#### Calling ioctl: VIDIOC_STREAMON\n");
         fcntl.ioctl(fd, VIDIOC_STREAMON, byref(buf_type))
         print("Stream ON successful")
         return True
@@ -1076,6 +1099,7 @@ def stream_off(fd):
     """Stop video streaming"""
     buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
     try:
+        print("#### Calling ioctl: VIDIOC_STREAMOFF\n");
         fcntl.ioctl(fd, VIDIOC_STREAMOFF, byref(buf_type))
         print("Stream OFF successful")
         return True
@@ -1092,6 +1116,7 @@ def handle_streamon_event(event):
         # Start the video stream
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
         print("Starting video stream...")
+        print("#### Calling ioctl: VIDIOC_STREAMON\n");
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
         print("Stream started successfully")
         
@@ -1133,6 +1158,7 @@ def handle_streamon_event(event):
             v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
             
             try:
+                print("#### Calling ioctl: VIDIOC_QBUF\n");
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
                 print(f"  Successfully queued buffer {buf['index']}")
             except Exception as e:
@@ -1202,6 +1228,7 @@ def streaming_thread(fps):
             buf.memory = V4L2_MEMORY_MMAP
             
             try:
+                print("#### Calling ioctl: VIDIOC_DQBUF\n");
                 fcntl.ioctl(fd, VIDIOC_DQBUF, buf)
             except OSError as e:
                 if e.errno == errno.EAGAIN:
@@ -1223,6 +1250,7 @@ def streaming_thread(fps):
             buf.timestamp.tv_usec = int((current_time - int(current_time)) * 1000000)
             
             try:
+                print("#### Calling ioctl: VIDIOC_QBUF\n");
                 fcntl.ioctl(fd, VIDIOC_QBUF, buf)
                 frame_count += 1
                 frames_since_stats += 1
