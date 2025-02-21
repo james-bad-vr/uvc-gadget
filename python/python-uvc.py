@@ -1064,8 +1064,8 @@ EVENT_HANDLERS = {
 def subscribe_events(fd):
     """Subscribe to all UVC events"""
     events = [
-        UVC_EVENT_CONNECT,
-        UVC_EVENT_DISCONNECT,
+        #UVC_EVENT_CONNECT,
+        #UVC_EVENT_DISCONNECT,
         UVC_EVENT_SETUP,
         UVC_EVENT_DATA,
         UVC_EVENT_STREAMON,
