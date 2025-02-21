@@ -475,6 +475,16 @@ static void uvc_events_process(void *d)
 			return;
 	}
 
+	  // Log the response before sending
+    printf("\nResponse being sent:\n");
+    printf("resp.length: %d\n", resp.length);
+    printf("resp.data (first 16 bytes): ");
+    for (int i = 0; i < 16 && i < resp.length; i++) {
+        printf("%02x ", (unsigned char)resp.data[i]);
+    }
+    printf("\n");
+
+
     printf("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
 	ret = ioctl(dev->vdev->fd, UVCIOC_SEND_RESPONSE, &resp);
 	
