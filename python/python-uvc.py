@@ -345,14 +345,6 @@ def main():
             print("Failed to set video format")
             return
         
-        # Initialize video buffers
-        buffers = init_video_buffers(fd)
-        if not buffers:
-            print("Failed to initialize video buffers")
-            return
-            
-        print(f"Initialized {len(buffers)} video buffers")
-        
         # Subscribe to all events
         if subscribe_events(fd) < 0:
             print("Failed to subscribe to events")
@@ -920,6 +912,16 @@ def handle_data_event(event):
 
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
+
+            print("\n✅ COMMIT Received - Allocating Buffers")
+            global buffers
+            buffers = init_video_buffers(fd)  # Allocate buffers **after COMMIT**
+            
+            if not buffers:
+                print("❌ Failed to allocate buffers after COMMIT")
+                return None
+
+            print(f"✅ Allocated {len(buffers)} buffers")
 
             print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
