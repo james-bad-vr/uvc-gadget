@@ -15,8 +15,6 @@ from ctypes import (
 )
 import mmap
 
-print(f"System endianness: {sys.byteorder}")
-
 # IOCTL codes
 VIDIOC_QUERYCAP = 0x80685600
 VIDIOC_G_FMT = 0xc0d05604
