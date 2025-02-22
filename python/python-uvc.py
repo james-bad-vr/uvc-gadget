@@ -1144,23 +1144,16 @@ def handle_streamon_event(event):
     global state, buffers
 
     try:
-        # Start the video stream
-        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-        print("Starting video stream...")
-        print("#### Calling ioctl: VIDIOC_STREAMON\n")
-        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-        print("Stream started successfully")
-
-        # ✅ Allocate buffers AFTER VIDIOC_STREAMON (matches uvc-gadget behavior)
+        # ✅ Allocate buffers BEFORE VIDIOC_STREAMON
         buffers = init_video_buffers(fd)
 
         if not buffers:
-            print("❌ Failed to allocate buffers after STREAMON")
+            print("❌ Failed to allocate buffers before STREAMON")
             return None
 
         print(f"✅ Allocated {len(buffers)} buffers")
 
-        # ✅ Query each buffer after allocation (matches uvc-gadget)
+        # ✅ Query each buffer after allocation
         for i in range(len(buffers)):
             buf = v4l2_buffer()
             buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
@@ -1173,6 +1166,13 @@ def handle_streamon_event(event):
                 print(f"Buffer {i} mapped at offset {buf.m.offset}, length: {buf.length}")
             except Exception as e:
                 print(f"❌ Failed to query buffer {i}: {e}")
+
+        # ✅ Now Start the Video Stream
+        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        print("Starting video stream...")
+        print("#### Calling ioctl: VIDIOC_STREAMON\n")
+        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        print("Stream started successfully")
 
         # ✅ Existing functionality: Print current format details
         if not current_format:
@@ -1193,7 +1193,7 @@ def handle_streamon_event(event):
         print(f"  Frame interval: {frame_interval_ns}ns")
         print(f"  Target FPS: {fps}")
 
-        # ✅ Queue buffers after querying them (matches uvc-gadget)
+        # ✅ Queue buffers after querying them
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
 
@@ -1232,6 +1232,7 @@ def handle_streamon_event(event):
         print(f"Error details: {type(e).__name__}")
 
     return None
+
 
 
 def streaming_thread(fps):
