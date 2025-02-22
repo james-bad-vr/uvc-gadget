@@ -338,10 +338,6 @@ def main():
         fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
         print(f"Capabilities: 0x{cap.capabilities:08x}")
 
-        # Set video format
-        if set_video_format(fd) < 0:
-            print("Failed to set video format")
-            return
 
         # ✅ Initialize probe and commit control (Matches C `uvc_events_init`)
         print("\n🔧 Initializing Streaming Control Defaults")
@@ -464,39 +460,39 @@ def log_streaming_control(ctrl, prefix=""):
     print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
     
-def set_video_format(fd):
-    """Set video format to YUYV 640x360"""
-    print("\nSetting video format")
-    global current_format
-    
+def set_video_format(fd, frame_index=1, frame_interval=333333):
+    """Set video format using committed parameters"""
+    print("\n🎥 Configuring Video Format...")
+
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     fmt.fmt.pix.width = 640
     fmt.fmt.pix.height = 360
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
+    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2
     fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
     fmt.fmt.pix.xfer_func = V4L2_XFER_FUNC_SRGB
-    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601  # Standard for YUYV
+    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601
     fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
-    
+
     try:
-        print("#### Calling ioctl: VIDIOC_S_FMT\n");
+        print("#### Calling ioctl: VIDIOC_S_FMT\n")
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
-        print("Video format set successfully:")
+        print("✅ Video format set successfully:")
         print(f"  Width: {fmt.fmt.pix.width}")
         print(f"  Height: {fmt.fmt.pix.height}")
         print(f"  Pixel Format: {hex(fmt.fmt.pix.pixelformat)}")
         print(f"  Bytes per line: {fmt.fmt.pix.bytesperline}")
         print(f"  Size image: {fmt.fmt.pix.sizeimage}")
-        print(f"  Colorspace: {fmt.fmt.pix.colorspace}")
-        current_format = fmt.fmt.pix  # Store the current format
+        print(f"  Frame Index: {frame_index}")
+        print(f"  Frame Interval: {frame_interval}")
         return True
     except Exception as e:
-        print(f"Failed to set video format: {e}")
+        print(f"❌ Failed to set video format: {e}")
         return False
+
 
 def handle_request(fd, ctrl, req, response):
     print(f"Handling bRequest: 0x{req.bRequest:02x}")
@@ -927,6 +923,13 @@ def handle_data_event(event):
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
 
+            # 🛠️ Set the video format using the committed parameters
+            print("\n🎥 Setting Video Format from COMMIT Parameters...")
+            if not set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval):
+                print("❌ Failed to set video format after COMMIT")
+                return None
+
+            # ✅ Allocate Buffers AFTER Format is Set
             print("\n✅ COMMIT Received - Allocating Buffers")
             global buffers
             buffers = init_video_buffers(fd)  # Allocate buffers **after COMMIT**
