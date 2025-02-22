@@ -462,6 +462,8 @@ def log_streaming_control(ctrl, prefix=""):
     
 def set_video_format(fd, frame_index=1, frame_interval=333333):
     """Set video format using committed parameters"""
+    global current_format  # Ensure we store the format globally
+    
     print("\n🎥 Configuring Video Format...")
 
     fmt = v4l2_format()
@@ -480,6 +482,10 @@ def set_video_format(fd, frame_index=1, frame_interval=333333):
     try:
         print("#### Calling ioctl: VIDIOC_S_FMT\n")
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
+
+        # ✅ Store the current format
+        current_format = fmt.fmt.pix
+
         print("✅ Video format set successfully:")
         print(f"  Width: {fmt.fmt.pix.width}")
         print(f"  Height: {fmt.fmt.pix.height}")
@@ -488,10 +494,12 @@ def set_video_format(fd, frame_index=1, frame_interval=333333):
         print(f"  Size image: {fmt.fmt.pix.sizeimage}")
         print(f"  Frame Index: {frame_index}")
         print(f"  Frame Interval: {frame_interval}")
+
         return True
     except Exception as e:
         print(f"❌ Failed to set video format: {e}")
         return False
+
 
 
 def handle_request(fd, ctrl, req, response):
@@ -928,6 +936,11 @@ def handle_data_event(event):
             if not set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval):
                 print("❌ Failed to set video format after COMMIT")
                 return None
+            
+            # ✅ Ensure format is set before allocating buffers
+            if current_format is None:
+                print("❌ Video format was not set correctly. Aborting buffer allocation.")
+                return None
 
             # ✅ Allocate Buffers AFTER Format is Set
             print("\n✅ COMMIT Received - Allocating Buffers")
@@ -1130,73 +1143,70 @@ def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
     print("\nUVC_EVENT_STREAMON")
     global state
-    
+
     try:
-        # Start the video stream
+        # Ensure video format and buffers are set
+        if current_format is None or buffers is None:
+            print("❌ Cannot start streaming: Video format or buffers are not initialized")
+            return None
+
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
         print("Starting video stream...")
-        print("#### Calling ioctl: VIDIOC_STREAMON\n");
+        print("#### Calling ioctl: VIDIOC_STREAMON\n")
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-        print("Stream started successfully")
-        
-        if not current_format or not buffers:
-            print("Error: Missing format or buffers")
-            return None
-            
+        print("✅ Stream started successfully")
+
         print(f"\nCurrent format:")
         print(f"  Width: {current_format.width}")
         print(f"  Height: {current_format.height}")
         print(f"  Pixel format: {hex(current_format.pixelformat)}")
         print(f"  Bytes per line: {current_format.bytesperline}")
         print(f"  Size image: {current_format.sizeimage}")
-        
-        # Use the committed frame interval for FPS
+
+        # Use committed frame interval
         frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
         fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
         print(f"\nUsing committed settings:")
         print(f"  Frame interval: {frame_interval_ns}ns")
         print(f"  Target FPS: {fps}")
-        
-        # Queue initial buffers with timing information
+
+        # Queue initial buffers
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
-            
+
             # Fill buffer with test pattern
             bytes_used = generate_test_pattern(
-                buf['mmap'], 
-                current_format.width, 
+                buf['mmap'],
+                current_format.width,
                 current_format.height
             )
-            
+
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
-            v4l2_buf.timestamp.tv_sec = 0
-            v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
-            
+
             try:
-                print("#### Calling ioctl: VIDIOC_QBUF\n");
+                print("#### Calling ioctl: VIDIOC_QBUF\n")
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
                 print(f"  Successfully queued buffer {buf['index']}")
             except Exception as e:
-                print(f"  Failed to queue buffer: {e}")
-                print(f"  Error details: {type(e).__name__}")
-        
-        # Start streaming thread with timing control
+                print(f"  ❌ Failed to queue buffer: {e}")
+
+        # Start streaming thread
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
         thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
         thread.start()
-        print("Streaming thread started with ID:", thread.ident)
-            
+        print("✅ Streaming thread started with ID:", thread.ident)
+
     except Exception as e:
-        print(f"Failed to start stream: {e}")
-        print(f"Error details: {type(e).__name__}")
-    
+        print(f"❌ Failed to start stream: {e}")
+
     return None
+
 
 def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
