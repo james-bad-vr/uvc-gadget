@@ -1167,33 +1167,9 @@ def handle_streamon_event(event):
             except Exception as e:
                 print(f"❌ Failed to query buffer {i}: {e}")
 
-        # ✅ Now Start the Video Stream
-        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-        print("Starting video stream...")
-        print("#### Calling ioctl: VIDIOC_STREAMON\n")
-        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-        print("Stream started successfully")
+        # ✅ Ensure at least one buffer is queued before VIDIOC_STREAMON
+        print("\nQueuing initial buffers before starting the stream...")
 
-        # ✅ Existing functionality: Print current format details
-        if not current_format:
-            print("Error: Missing format")
-            return None
-
-        print(f"\nCurrent format:")
-        print(f"  Width: {current_format.width}")
-        print(f"  Height: {current_format.height}")
-        print(f"  Pixel format: {hex(current_format.pixelformat)}")
-        print(f"  Bytes per line: {current_format.bytesperline}")
-        print(f"  Size image: {current_format.sizeimage}")
-
-        # ✅ Use committed frame interval for FPS
-        frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
-        fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
-        print(f"\nUsing committed settings:")
-        print(f"  Frame interval: {frame_interval_ns}ns")
-        print(f"  Target FPS: {fps}")
-
-        # ✅ Queue buffers after querying them
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
 
@@ -1218,6 +1194,32 @@ def handle_streamon_event(event):
                 print(f"✅ Successfully queued buffer {buf['index']}")
             except Exception as e:
                 print(f"❌ Failed to queue buffer {buf['index']}: {e}")
+
+        # ✅ Now Start the Video Stream (Only after buffers are queued)
+        buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
+        print("Starting video stream...")
+        print("#### Calling ioctl: VIDIOC_STREAMON\n")
+        fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
+        print("Stream started successfully")
+
+        # ✅ Existing functionality: Print current format details
+        if not current_format:
+            print("Error: Missing format")
+            return None
+
+        print(f"\nCurrent format:")
+        print(f"  Width: {current_format.width}")
+        print(f"  Height: {current_format.height}")
+        print(f"  Pixel format: {hex(current_format.pixelformat)}")
+        print(f"  Bytes per line: {current_format.bytesperline}")
+        print(f"  Size image: {current_format.sizeimage}")
+
+        # ✅ Use committed frame interval for FPS
+        frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
+        fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
+        print(f"\nUsing committed settings:")
+        print(f"  Frame interval: {frame_interval_ns}ns")
+        print(f"  Target FPS: {fps}")
 
         # ✅ Existing functionality: Start streaming thread with timing control
         state.streaming = True
