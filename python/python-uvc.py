@@ -402,21 +402,21 @@ def uvc_request_name(req):
     """Convert a UVC request code to a readable string"""
     return UVC_REQUEST_NAMES.get(req, "UNKNOWN")
 
-def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
+def init_streaming_control(ctrl, width=1920, height=1080, fps=30, mode='default'):
     """Initialize streaming control with dynamically calculated values."""
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
-    ctrl.bFrameIndex = 1
+    ctrl.bFrameIndex = 2  # Use frame index 2 for 1920x1080 (assuming frame index 1 is 640x360)
 
     # Calculate frame interval in 100ns units
     frame_interval = int(1e7 / fps)  # 30 FPS = 333333
     ctrl.dwFrameInterval = frame_interval
     
-    # Calculate max video frame size dynamically
+    # Calculate max video frame size for 1920x1080
     bytes_per_pixel = 2  # YUYV format
     ctrl.dwMaxVideoFrameSize = width * height * bytes_per_pixel
 
-    # USB packet size calculation (use 3072 for USB 2.0 compatibility)
+    # USB packet size calculation (use max USB 2.0 packet size)
     max_payload_size = 3072  # Safe default for USB 2.0
     ctrl.dwMaxPayloadTransferSize = max_payload_size
 
@@ -433,7 +433,7 @@ def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     ctrl.bMaxVersion = 1
 
     print(f"Initialized Streaming Control:")
-    print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
+    print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes ({width}x{height})")
     print(f"  Frame interval: {ctrl.dwFrameInterval} (100ns units)")
     print(f"  Max payload size: {ctrl.dwMaxPayloadTransferSize}")
 
@@ -460,7 +460,7 @@ def log_streaming_control(ctrl, prefix=""):
     print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
     
-def set_video_format(fd, frame_index=1, frame_interval=333333):
+def set_video_format(fd, frame_index=2, frame_interval=333333):
     """Set video format using committed parameters"""
     global current_format  # Ensure we store the format globally
     
@@ -468,8 +468,8 @@ def set_video_format(fd, frame_index=1, frame_interval=333333):
 
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-    fmt.fmt.pix.width = 640
-    fmt.fmt.pix.height = 360
+    fmt.fmt.pix.width = 1920
+    fmt.fmt.pix.height = 1080
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
     fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2
@@ -483,7 +483,7 @@ def set_video_format(fd, frame_index=1, frame_interval=333333):
         print("#### Calling ioctl: VIDIOC_S_FMT\n")
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
 
-        # ✅ Store the current format
+        # Store the current format
         current_format = fmt.fmt.pix
 
         print("✅ Video format set successfully:")
@@ -976,17 +976,17 @@ def handle_data_event(event):
 
 
 def init_video_buffers(fd):
-    """Initialize video buffers following v4l2_alloc_buffers() in v4l2.c"""
+    """Initialize video buffers with increased buffer size for 1920x1080"""
     print("\nInitializing video buffers")
     
-    # Request buffers
+    # Request more buffers for higher resolution
     req = v4l2_requestbuffers()
-    req.count = 4
+    req.count = 8  # Increased from 4 to 8 for better streaming performance
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     req.memory = V4L2_MEMORY_MMAP
     
     try:
-        print("#### Calling ioctl: VIDIOC_REQBUFS\n");
+        print("#### Calling ioctl: VIDIOC_REQBUFS\n")
         fcntl.ioctl(fd, VIDIOC_REQBUFS, req)
     except Exception as e:
         print(f"Failed to request buffers: {e}")
@@ -994,13 +994,13 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
-    # Pre-generate 8 patterns with different offsets
+    # Pre-generate patterns with larger size
     patterns = []
     for i in range(8):
         pattern = bytearray()
         bytes_per_line = current_format.width * 2
-        square_size = 64
-        offset = (i * current_format.width) // 8  # Divide width into 8 steps
+        square_size = 128  # Increased square size for better visibility at 1080p
+        offset = (i * current_format.width) // 8
         
         for y in range(current_format.height):
             for x in range(0, bytes_per_line, 4):
@@ -1024,7 +1024,7 @@ def init_video_buffers(fd):
         buf.index = i
         
         try:
-            print("#### Calling ioctl: VIDIOC_QUERYBUF\n");
+            print("#### Calling ioctl: VIDIOC_QUERYBUF\n")
             fcntl.ioctl(fd, VIDIOC_QUERYBUF, buf)
         except Exception as e:
             print(f"Failed to query buffer {i}: {e}")
