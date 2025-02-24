@@ -976,12 +976,12 @@ def handle_data_event(event):
 
 
 def init_video_buffers(fd):
-    """Initialize video buffers with increased buffer size for 1920x1080"""
+    """Initialize video buffers while maintaining 4 buffer count"""
     print("\nInitializing video buffers")
     
-    # Request more buffers for higher resolution
+    # Request buffers - keep at 4 as in original code
     req = v4l2_requestbuffers()
-    req.count = 8  # Increased from 4 to 8 for better streaming performance
+    req.count = 4  # Keep at 4 buffers
     req.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     req.memory = V4L2_MEMORY_MMAP
     
@@ -994,12 +994,12 @@ def init_video_buffers(fd):
         
     print(f"{req.count} buffers requested.")
     
-    # Pre-generate patterns with larger size
+    # Pre-generate patterns
     patterns = []
-    for i in range(8):
+    for i in range(8):  # Still generate 8 patterns for smooth animation
         pattern = bytearray()
         bytes_per_line = current_format.width * 2
-        square_size = 128  # Increased square size for better visibility at 1080p
+        square_size = 128  # Larger squares for 1080p
         offset = (i * current_format.width) // 8
         
         for y in range(current_format.height):
@@ -1014,7 +1014,7 @@ def init_video_buffers(fd):
     
     print(f"Generated {len(patterns)} patterns")
     
-    # Allocate buffer objects
+    # Allocate buffer objects - only 4 buffers
     buffers = []
     for i in range(req.count):
         # Query each buffer
