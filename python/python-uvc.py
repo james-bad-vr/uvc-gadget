@@ -821,7 +821,14 @@ def handle_setup_event(event):
 
                     if cs == UVC_VS_PROBE_CONTROL:
                         print("  👈 Returning PROBE control values")
-                        ctrl = state.probe_control
+                        ctrl = uvc_streaming_control()
+                        ctrl.bmHint = 1
+                        ctrl.bFormatIndex = 1  # First format
+                        ctrl.bFrameIndex = 1   # First frame
+                        ctrl.dwFrameInterval = 333333  # 30 FPS
+                        ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
+                        ctrl.dwMaxPayloadTransferSize = 3072
+                        ctrl.bmFramingInfo = 3
                         log_streaming_control(state.probe_control, "📊 Current PROBE Values")
                     elif cs == UVC_VS_COMMIT_CONTROL:
                         print("  👈 Returning COMMIT control values")
