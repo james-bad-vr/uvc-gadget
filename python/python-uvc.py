@@ -435,8 +435,6 @@ def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     ctrl.bPreferredVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
-    ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 format
-    ctrl.dwFrameInterval = 333333  # 30 FPS
 
     print(f"Initialized Streaming Control:")
     print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
@@ -944,14 +942,6 @@ def handle_data_event(event):
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n🟢 COMMIT Phase - Finalizing Parameters")
-
-               # Force sane values regardless of host request
-            ctrl.dwFrameInterval = 333333  # Force 30 FPS
-            ctrl.dwMaxPayloadTransferSize = 3072
-            ctrl.bmFramingInfo = 3
-            
-            # Ensure buffer size matches format
-            ctrl.dwMaxVideoFrameSize = current_format.sizeimage
 
              # If we haven't done PROBE, initialize default values
             if not state.probe_control.dwMaxVideoFrameSize:
