@@ -889,16 +889,7 @@ def handle_data_event(event):
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
 
-    # Inside the COMMIT handling code:
-    if ctrl.dwFrameInterval == 0:
-        ctrl.dwFrameInterval = 333333  # Force 30 FPS
-    if ctrl.bFormatIndex == 0:
-        ctrl.bFormatIndex = 1  # Force first format
-    if ctrl.bFrameIndex == 0:
-        ctrl.bFrameIndex = 1   # Force first frame
-    if ctrl.dwMaxVideoFrameSize == 0:
-        ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 size
-    
+  
     if state.current_control is None:
         print("❌ Error: No active control context")
         print("    Current state is invalid - expecting PROBE or COMMIT control")
@@ -927,6 +918,17 @@ def handle_data_event(event):
         print("\n🔄 Processing Streaming Control Parameters")
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
         log_streaming_control(ctrl, "📊 Received Parameters")
+
+          # Inside the COMMIT handling code:
+        if ctrl.dwFrameInterval == 0:
+            ctrl.dwFrameInterval = 333333  # Force 30 FPS
+        if ctrl.bFormatIndex == 0:
+            ctrl.bFormatIndex = 1  # Force first format
+        if ctrl.bFrameIndex == 0:
+            ctrl.bFrameIndex = 1   # Force first frame
+        if ctrl.dwMaxVideoFrameSize == 0:
+            ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 size
+    
 
         # Calculate and log FPS
         fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
