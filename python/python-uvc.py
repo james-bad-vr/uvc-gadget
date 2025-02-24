@@ -888,6 +888,16 @@ def handle_data_event(event):
     print("\n" + "="*80)
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
+
+    # Inside the COMMIT handling code:
+    if ctrl.dwFrameInterval == 0:
+        ctrl.dwFrameInterval = 333333  # Force 30 FPS
+    if ctrl.bFormatIndex == 0:
+        ctrl.bFormatIndex = 1  # Force first format
+    if ctrl.bFrameIndex == 0:
+        ctrl.bFrameIndex = 1   # Force first frame
+    if ctrl.dwMaxVideoFrameSize == 0:
+        ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 size
     
     if state.current_control is None:
         print("❌ Error: No active control context")
@@ -964,6 +974,7 @@ def handle_data_event(event):
                 return None
 
             print(f"✅ Allocated {len(buffers)} buffers")
+            
 
             print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
@@ -971,6 +982,10 @@ def handle_data_event(event):
             print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
+
+              # After COMMIT processing
+            print("Forcing stream start since no STREAMON received")
+            handle_streamon_event(None)
 
     except Exception as e:
         print("\n❌ Error Processing Control Data:")
