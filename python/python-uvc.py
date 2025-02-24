@@ -764,7 +764,7 @@ def handle_setup_event(event):
     response = uvc_request_data()
     response.length = -errno.EL2HLT  # Default response if not handled
     
-    # Log request details with clearer structure
+    # Log request details
     print("\n🔍 USB Control Request Details:")
     print(f"  bmRequestType: 0x{req.bRequestType:02x}")
     print(f"    Direction: {'Device-to-Host' if req.bRequestType & 0x80 else 'Host-to-Device'}")
@@ -774,8 +774,7 @@ def handle_setup_event(event):
     print(f"  wValue:        0x{req.wValue:04x}")
     print(f"  wIndex:        0x{req.wIndex:04x}")
     print(f"  wLength:       {req.wLength}")
-    
-    # Parse request type
+
     request_type = req.bRequestType & USB_TYPE_MASK
     print(f"\n📌 Request Category: 0x{request_type:02x} " + 
           f"({'Class-Specific' if request_type == USB_TYPE_CLASS else 'Standard'})")
@@ -802,50 +801,48 @@ def handle_setup_event(event):
                 print(f"  Phase: {phase} Control")
 
                 if req.bRequest == UVC_SET_CUR:
-                    print("  Operation: SET_CUR")
-                    print("  👉 Preparing for DATA phase (host will send parameters)")
-                    
-                    state.current_control = cs  # Mark which control is active
-                    response.length = req.wLength  # Indicate host should send data
-                    
+                    print(f"  Operation: SET_CUR {phase}")
+
+                    if cs == UVC_VS_PROBE_CONTROL:
+                        print("  ✅ Storing PROBE control parameters")
+                        memmove(addressof(state.probe_control), event.u.data.data, sizeof(uvc_streaming_control))
+                        state.current_control = UVC_VS_PROBE_CONTROL
+                    elif cs == UVC_VS_COMMIT_CONTROL:
+                        print("  ✅ Storing COMMIT control parameters")
+                        memmove(addressof(state.commit_control), event.u.data.data, sizeof(uvc_streaming_control))
+                        state.current_control = UVC_VS_COMMIT_CONTROL
+
+                        # ✅ Set the video format after COMMIT
+                        print("\n🎥 Setting Video Format from COMMIT Parameters...")
+                        set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval)
+
+                        # ✅ Allocate Buffers AFTER Setting Format
+                        print("\n✅ Allocating Buffers for Streaming")
+                        global buffers
+                        buffers = init_video_buffers(fd)
+                        if not buffers:
+                            print("❌ Failed to allocate buffers after COMMIT")
+                            return None
+                        print(f"✅ Allocated {len(buffers)} buffers")
+
+                    response.length = 0  # Acknowledge SET_CUR
+
                 elif req.bRequest == UVC_GET_CUR:
-                    print("  Operation: GET_CUR")
+                    print(f"  Operation: GET_CUR {phase}")
 
                     if cs == UVC_VS_PROBE_CONTROL:
                         print("  👈 Returning PROBE control values")
                         ctrl = state.probe_control
-                        log_streaming_control(state.probe_control, "📊 Current PROBE Values")
                     elif cs == UVC_VS_COMMIT_CONTROL:
                         print("  👈 Returning COMMIT control values")
                         ctrl = state.commit_control
-                        log_streaming_control(state.commit_control, "📊 Current COMMIT Values")
 
-                    # Ensure that we return the committed values correctly
+                    # ✅ Return stored values
                     memmove(addressof(response.data), addressof(ctrl), sizeof(uvc_streaming_control))
                     response.length = sizeof(uvc_streaming_control)
-                    
-                    print("  Response Data:")
-                    print('  ' + ' '.join(f'{b:02x}' for b in bytes(response.data[:16])))
 
-                elif req.bRequest == UVC_GET_MIN:
-                    print("  Operation: GET_MIN")
-                    print("  👈 Returning minimum supported values")
-                    temp_ctrl = uvc_streaming_control()
-                    init_streaming_control(temp_ctrl, mode='min')
-                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
-                    response.length = sizeof(uvc_streaming_control)
-
-                elif req.bRequest == UVC_GET_MAX:
-                    print("  Operation: GET_MAX")
-                    print("  👈 Returning maximum supported values")
-                    temp_ctrl = uvc_streaming_control()
-                    init_streaming_control(temp_ctrl, mode='max')
-                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
-                    response.length = sizeof(uvc_streaming_control)
-
-                elif req.bRequest == UVC_GET_RES:
-                    print("  Operation: GET_RES")
-                    print("  👈 Returning resolution values")
+                elif req.bRequest in [UVC_GET_MIN, UVC_GET_MAX, UVC_GET_RES, UVC_GET_DEF]:
+                    print(f"  Operation: {uvc_request_name(req.bRequest)}")
                     temp_ctrl = uvc_streaming_control()
                     init_streaming_control(temp_ctrl)
                     memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
@@ -853,17 +850,8 @@ def handle_setup_event(event):
 
                 elif req.bRequest == UVC_GET_INFO:
                     print("  Operation: GET_INFO")
-                    print("  👈 Returning capabilities (0x03: GET/SET supported)")
-                    response.data[0] = 0x03
+                    response.data[0] = 0x03  # Indicate GET/SET supported
                     response.length = 1
-
-                elif req.bRequest == UVC_GET_DEF:
-                    print("  Operation: GET_DEF")
-                    print("  👈 Returning default values")
-                    temp_ctrl = uvc_streaming_control()
-                    init_streaming_control(temp_ctrl)
-                    memmove(addressof(response.data), addressof(temp_ctrl), sizeof(uvc_streaming_control))
-                    response.length = sizeof(uvc_streaming_control)
 
     print(f"\n📤 Response Summary:")
     print(f"  Length: {response.length} bytes")
@@ -876,15 +864,15 @@ def handle_setup_event(event):
     return response
 
 
+
 def handle_data_event(event):
     print("\n" + "="*80)
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
     
     if state.current_control is None:
-        print("❌ Error: No active control context")
-        print("    Current state is invalid - expecting PROBE or COMMIT control")
-        return None
+        print("❌ Error: No active control context - Forcing COMMIT mode")
+        state.current_control = UVC_VS_COMMIT_CONTROL  # Assume COMMIT if unknown
 
     phase = "PROBE" if state.current_control == UVC_VS_PROBE_CONTROL else "COMMIT"
     print(f"\n📦 Raw Event Data for {phase} Phase:")
@@ -911,7 +899,7 @@ def handle_data_event(event):
         log_streaming_control(ctrl, "📊 Received Parameters")
 
         # Calculate and log FPS
-        fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
+        fps = 1000000 / ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
         print(f"\n⏱️ Calculated FPS: {fps:.2f}")
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
@@ -931,32 +919,18 @@ def handle_data_event(event):
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
 
-            # 🛠️ Set the video format using the committed parameters
-            print("\n🎥 Setting Video Format from COMMIT Parameters...")
-            if not set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval):
-                print("❌ Failed to set video format after COMMIT")
-                return None
-            
-            # ✅ Ensure format is set before allocating buffers
-            if current_format is None:
-                print("❌ Video format was not set correctly. Aborting buffer allocation.")
-                return None
+            # ✅ Ensure buffers are correctly queued before streaming
+            print("\n✅ Queuing Buffers Before Streaming")
+            queue_initial_buffers(fd, buffers, 640, 360)
 
-            # ✅ Allocate Buffers AFTER Format is Set
-            print("\n✅ COMMIT Received - Allocating Buffers")
-            global buffers
-            buffers = init_video_buffers(fd)  # Allocate buffers **after COMMIT**
-            
-            if not buffers:
-                print("❌ Failed to allocate buffers after COMMIT")
-                return None
-
-            print(f"✅ Allocated {len(buffers)} buffers")
+            # ✅ Start video streaming after buffers are queued
+            print("\n🎥 Starting Video Streaming...")
+            stream_on(fd)
 
             print("\n🤝 Sending COMMIT Acknowledgment")
             response = uvc_request_data()
             response.length = 0
-            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
+            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n")
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
 
@@ -971,6 +945,7 @@ def handle_data_event(event):
 
     print("="*80 + "\n")
     return None
+
 
 
 
