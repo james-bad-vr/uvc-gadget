@@ -408,6 +408,10 @@ def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
 
+    if not ctrl.dwMaxVideoFrameSize:
+        ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 format
+        ctrl.dwFrameInterval = 333333  # 30 FPS
+
     # Calculate frame interval in 100ns units
     frame_interval = int(1e7 / fps)  # 30 FPS = 333333
     ctrl.dwFrameInterval = frame_interval
@@ -775,6 +779,10 @@ def handle_setup_event(event):
     print(f"  wIndex:        0x{req.wIndex:04x}")
     print(f"  wLength:       {req.wLength}")
     
+    if state.current_control is None and req.bRequest == UVC_SET_CUR:
+        # Allow direct COMMIT if no control is active
+        state.current_control = (req.wValue >> 8) & 0xFF
+    
     # Parse request type
     request_type = req.bRequestType & USB_TYPE_MASK
     print(f"\n📌 Request Category: 0x{request_type:02x} " + 
@@ -922,6 +930,10 @@ def handle_data_event(event):
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n🟢 COMMIT Phase - Finalizing Parameters")
+
+             # If we haven't done PROBE, initialize default values
+            if not state.probe_control.dwMaxVideoFrameSize:
+                init_streaming_control(state.probe_control)
 
             if ctrl.dwMaxPayloadTransferSize == 0:
                 print("⚠️ Invalid dwMaxPayloadTransferSize detected")
