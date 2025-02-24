@@ -404,25 +404,23 @@ def uvc_request_name(req):
 
 def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     """Initialize streaming control with dynamically calculated values."""
+    # Set basic parameters
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
 
+    # ✨ CRITICAL: Initialize default values if they're not set
     if not ctrl.dwMaxVideoFrameSize:
-        ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 format
-        ctrl.dwFrameInterval = 333333  # 30 FPS
+        ctrl.dwMaxVideoFrameSize = width * height * 2  # YUY2 format
+        ctrl.dwFrameInterval = 333333  # 30 FPS default
 
     # Calculate frame interval in 100ns units
     frame_interval = int(1e7 / fps)  # 30 FPS = 333333
     ctrl.dwFrameInterval = frame_interval
-    
-    # Calculate max video frame size dynamically
-    bytes_per_pixel = 2  # YUYV format
-    ctrl.dwMaxVideoFrameSize = width * height * bytes_per_pixel
 
     # USB packet size calculation (use 3072 for USB 2.0 compatibility)
-    max_payload_size = 3072  # Safe default for USB 2.0
-    ctrl.dwMaxPayloadTransferSize = max_payload_size
+    if not ctrl.dwMaxPayloadTransferSize:
+        ctrl.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
 
     # Set additional parameters
     ctrl.wKeyFrameRate = 0
@@ -435,6 +433,11 @@ def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     ctrl.bPreferredVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
+
+    print(f"Initialized Streaming Control:")
+    print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
+    print(f"  Frame interval: {ctrl.dwFrameInterval} (100ns units)")
+    print(f"  Max payload size: {ctrl.dwMaxPayloadTransferSize}")
 
     print(f"Initialized Streaming Control:")
     print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
@@ -888,7 +891,6 @@ def handle_data_event(event):
     print("\n" + "="*80)
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
-
   
     if state.current_control is None:
         print("❌ Error: No active control context")
@@ -917,18 +919,25 @@ def handle_data_event(event):
     try:
         print("\n🔄 Processing Streaming Control Parameters")
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
-        log_streaming_control(ctrl, "📊 Received Parameters")
-
-          # Inside the COMMIT handling code:
+        
+        # ✨ CRITICAL: Validate and set default values
         if ctrl.dwFrameInterval == 0:
-            ctrl.dwFrameInterval = 333333  # Force 30 FPS
+            print("⚠️ Setting default frame interval (30 FPS)")
+            ctrl.dwFrameInterval = 333333
         if ctrl.bFormatIndex == 0:
-            ctrl.bFormatIndex = 1  # Force first format
+            print("⚠️ Setting default format index")
+            ctrl.bFormatIndex = 1
         if ctrl.bFrameIndex == 0:
-            ctrl.bFrameIndex = 1   # Force first frame
+            print("⚠️ Setting default frame index")
+            ctrl.bFrameIndex = 1
         if ctrl.dwMaxVideoFrameSize == 0:
-            ctrl.dwMaxVideoFrameSize = 640 * 360 * 2  # YUY2 size
-    
+            print("⚠️ Setting default video frame size")
+            ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
+        if ctrl.dwMaxPayloadTransferSize == 0:
+            print("⚠️ Setting default max payload size")
+            ctrl.dwMaxPayloadTransferSize = 3072
+            
+        log_streaming_control(ctrl, "📊 Received Parameters")
 
         # Calculate and log FPS
         fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
@@ -936,71 +945,56 @@ def handle_data_event(event):
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\n🔵 PROBE Phase - Storing Parameters")
-            memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
-            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
+            memmove(addressof(state.probe_control), addressof(ctrl), sizeof(uvc_streaming_control))
+            memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.probe_control, "✅ Updated PROBE State")
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n🟢 COMMIT Phase - Finalizing Parameters")
 
-             # If we haven't done PROBE, initialize default values
+            # ✨ CRITICAL: If we haven't done PROBE, initialize default values
             if not state.probe_control.dwMaxVideoFrameSize:
+                print("⚠️ No PROBE values - initializing defaults")
                 init_streaming_control(state.probe_control)
-
-            if ctrl.dwMaxPayloadTransferSize == 0:
-                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
-                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
-                ctrl.dwMaxPayloadTransferSize = 3072
 
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
 
-            # 🛠️ Set the video format using the committed parameters
+            # Set video format
             print("\n🎥 Setting Video Format from COMMIT Parameters...")
             if not set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval):
                 print("❌ Failed to set video format after COMMIT")
                 return None
             
-            # ✅ Ensure format is set before allocating buffers
             if current_format is None:
-                print("❌ Video format was not set correctly. Aborting buffer allocation.")
+                print("❌ Video format was not set correctly")
                 return None
 
-            # ✅ Allocate Buffers AFTER Format is Set
-            print("\n✅ COMMIT Received - Allocating Buffers")
+            # Allocate buffers
+            print("\n✅ Allocating Buffers")
             global buffers
-            buffers = init_video_buffers(fd)  # Allocate buffers **after COMMIT**
+            buffers = init_video_buffers(fd)
             
             if not buffers:
-                print("❌ Failed to allocate buffers after COMMIT")
+                print("❌ Failed to allocate buffers")
                 return None
 
             print(f"✅ Allocated {len(buffers)} buffers")
-            
 
-            print("\n🤝 Sending COMMIT Acknowledgment")
-            response = uvc_request_data()
-            response.length = 0
-            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
-            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
-            print("✅ COMMIT acknowledged - Ready for streaming")
-
-              # After COMMIT processing
-            print("Forcing stream start since no STREAMON received")
+            # Force stream start
+            print("\n🎥 Starting stream...")
             handle_streamon_event(None)
 
     except Exception as e:
-        print("\n❌ Error Processing Control Data:")
-        print(f"  Exception: {type(e).__name__}")
-        print(f"  Message: {str(e)}")
+        print(f"\n❌ Error: {str(e)}")
+        print(f"Type: {type(e).__name__}")
         return None
 
-    print("\n🔄 Clearing control context")
+    print("\n✅ Clearing control context")
     state.current_control = None
-
+    
     print("="*80 + "\n")
     return None
-
 
 
 
