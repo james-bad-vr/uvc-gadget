@@ -925,6 +925,46 @@ def handle_data_event(event):
         fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
         print(f"\n⏱️ Calculated FPS: {fps:.2f}")
 
+        # After parsing the parameters, add robust validation
+        if state.current_control == UVC_VS_PROBE_CONTROL or state.current_control == UVC_VS_COMMIT_CONTROL:
+            # Validate and fix critical UVC streaming parameters
+            
+            # Ensure format index is valid
+            if ctrl.bFormatIndex == 0:
+                print("⚠️ Invalid bFormatIndex detected, setting to default (1)")
+                ctrl.bFormatIndex = 1
+                
+            # Ensure frame index is valid
+            if ctrl.bFrameIndex == 0:
+                print("⚠️ Invalid bFrameIndex detected, setting to default (1)")
+                ctrl.bFrameIndex = 1
+                
+            # Ensure frame interval is valid
+            if ctrl.dwFrameInterval == 0:
+                print("⚠️ Invalid dwFrameInterval detected, setting to default (333333 - 30fps)")
+                ctrl.dwFrameInterval = 333333
+                
+            # Ensure max video frame size is valid
+            if ctrl.dwMaxVideoFrameSize == 0:
+                print("⚠️ Invalid dwMaxVideoFrameSize detected, calculating from format")
+                # Use the current format we set at the beginning
+                ctrl.dwMaxVideoFrameSize = current_format.width * current_format.height * 2  # YUYV = 2 bytes/pixel
+                
+            # Ensure max payload is valid
+            if ctrl.dwMaxPayloadTransferSize == 0:
+                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
+                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
+                ctrl.dwMaxPayloadTransferSize = 3072
+                
+            # Log corrected parameters
+            print("\n🔧 Corrected Parameters:")
+            print(f"  bFormatIndex: {ctrl.bFormatIndex}")
+            print(f"  bFrameIndex: {ctrl.bFrameIndex}")
+            print(f"  dwFrameInterval: {ctrl.dwFrameInterval} ({1000000/ctrl.dwFrameInterval:.2f} FPS)")
+            print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
+        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
+
+
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\n🔵 PROBE Phase - Storing Parameters")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
