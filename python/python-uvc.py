@@ -778,12 +778,21 @@ def handle_setup_event(event):
     
     if request_type == USB_TYPE_CLASS:
         cs = (req.wValue >> 8) & 0xFF
-         # Fix for Mac/Vision Pro compatibility
+        
+        # Get both bytes from wIndex
         interface_lsb = req.wIndex & 0xFF
         interface_msb = (req.wIndex >> 8) & 0xFF
-    
-        # Use either byte depending on which one is non-zero
-        interface = interface_lsb if interface_lsb != 0 else interface_msb
+        
+        # More robust interface detection for Mac/Vision Pro
+        if cs == UVC_VS_PROBE_CONTROL or cs == UVC_VS_COMMIT_CONTROL:
+            # These control selectors are always for streaming interface
+            interface = 1
+        elif interface_lsb != 0:
+            # If LSB is non-zero, use that (Windows style)
+            interface = interface_lsb
+        else:
+            # Otherwise, use MSB but cap at 1 to prevent invalid interface numbers
+            interface = min(interface_msb, 1)
         
         print(f"\n🔧 Class-Specific Request Details:")
         print(f"  Control Selector: 0x{cs:02x} " + 
