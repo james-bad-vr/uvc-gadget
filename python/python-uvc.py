@@ -778,12 +778,18 @@ def handle_setup_event(event):
     
     if request_type == USB_TYPE_CLASS:
         cs = (req.wValue >> 8) & 0xFF
-        interface = req.wIndex & 0xFF
+         # Fix for Mac/Vision Pro compatibility
+        interface_lsb = req.wIndex & 0xFF
+        interface_msb = (req.wIndex >> 8) & 0xFF
+    
+        # Use either byte depending on which one is non-zero
+        interface = interface_lsb if interface_lsb != 0 else interface_msb
         
         print(f"\n🔧 Class-Specific Request Details:")
         print(f"  Control Selector: 0x{cs:02x} " + 
-              f"({'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT' if cs == UVC_VS_COMMIT_CONTROL else 'OTHER'})")
+            f"({'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT' if cs == UVC_VS_COMMIT_CONTROL else 'OTHER'})")
         print(f"  Interface:        {interface} ({'Control' if interface == 0 else 'Streaming' if interface == 1 else 'Unknown'})")
+        print(f"  Interface bytes:  LSB=0x{interface_lsb:02x}, MSB=0x{interface_msb:02x}")
         
         if interface == 0:
             print("\n⚙️ Processing Control Interface Request")
