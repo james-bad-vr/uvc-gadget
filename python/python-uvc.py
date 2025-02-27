@@ -999,49 +999,17 @@ def handle_data_event(event):
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
 
-            print("\n🚀 Auto-starting streaming after COMMIT for macOS/Vision Pro compatibility")
-            try:
-                buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
-                print("#### Calling ioctl: VIDIOC_STREAMON\n")
-                fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-                print("Stream started automatically")
-                
-                # Queue initial buffers with timing information
-                for buf in buffers:
-                    print(f"\nProcessing buffer {buf['index']}:")
-                    
-                    # Fill buffer with test pattern
-                    bytes_used = generate_test_pattern(
-                        buf['mmap'], 
-                        current_format.width, 
-                        current_format.height
-                    )
-                    
-                    v4l2_buf = v4l2_buffer()
-                    v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
-                    v4l2_buf.memory = V4L2_MEMORY_MMAP
-                    v4l2_buf.index = buf['index']
-                    v4l2_buf.bytesused = bytes_used
-                    
-                    try:
-                        print("#### Calling ioctl: VIDIOC_QBUF\n")
-                        fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
-                        print(f"  Successfully queued buffer {buf['index']}")
-                    except Exception as e:
-                        print(f"  Failed to queue buffer: {e}")
-                
-                # Start streaming thread
-                state.streaming = True
-                print("\nStarting streaming thread...")
-                import threading
-                fps = int(1000000/ctrl.dwFrameInterval) if ctrl.dwFrameInterval > 0 else 30
-                thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
-                thread.start()
-                print("Streaming thread started")
-            except Exception as e:
-                print(f"Failed to auto-start stream: {e}")
+            print("\n🔄 Simulating STREAMON event for macOS compatibility")
 
-
+            # Instead of calling VIDIOC_STREAMON directly, call our stream handler
+            stream_handler = EVENT_HANDLERS.get(UVC_EVENT_STREAMON)
+            if stream_handler:
+                # Create a simulated event and pass it to the handler
+                simulated_event = v4l2_event()
+                simulated_event.type = UVC_EVENT_STREAMON
+                stream_handler(simulated_event)
+            else:
+                print("⚠️ Unable to simulate STREAMON - handler not found")
 
     except Exception as e:
         print("\n❌ Error Processing Control Data:")
