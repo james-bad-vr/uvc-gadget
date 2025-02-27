@@ -338,6 +338,10 @@ def main():
         fcntl.ioctl(fd, VIDIOC_QUERYCAP, cap)
         print(f"Capabilities: 0x{cap.capabilities:08x}")
 
+        # Set video format
+        if set_video_format(fd) < 0:
+            print("Failed to set video format")
+            return
 
         # ✅ Initialize probe and commit control (Matches C `uvc_events_init`)
         print("\n🔧 Initializing Streaming Control Defaults")
@@ -404,23 +408,21 @@ def uvc_request_name(req):
 
 def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     """Initialize streaming control with dynamically calculated values."""
-    # Set basic parameters
     ctrl.bmHint = 1
     ctrl.bFormatIndex = 1
     ctrl.bFrameIndex = 1
 
-    # ✨ CRITICAL: Initialize default values if they're not set
-    if not ctrl.dwMaxVideoFrameSize:
-        ctrl.dwMaxVideoFrameSize = width * height * 2  # YUY2 format
-        ctrl.dwFrameInterval = 333333  # 30 FPS default
-
     # Calculate frame interval in 100ns units
     frame_interval = int(1e7 / fps)  # 30 FPS = 333333
     ctrl.dwFrameInterval = frame_interval
+    
+    # Calculate max video frame size dynamically
+    bytes_per_pixel = 2  # YUYV format
+    ctrl.dwMaxVideoFrameSize = width * height * bytes_per_pixel
 
     # USB packet size calculation (use 3072 for USB 2.0 compatibility)
-    if not ctrl.dwMaxPayloadTransferSize:
-        ctrl.dwMaxPayloadTransferSize = 3072  # Safe default for USB 2.0
+    max_payload_size = 3072  # Safe default for USB 2.0
+    ctrl.dwMaxPayloadTransferSize = max_payload_size
 
     # Set additional parameters
     ctrl.wKeyFrameRate = 0
@@ -433,11 +435,6 @@ def init_streaming_control(ctrl, width=640, height=360, fps=30, mode='default'):
     ctrl.bPreferredVersion = 1
     ctrl.bMinVersion = 1
     ctrl.bMaxVersion = 1
-
-    print(f"Initialized Streaming Control:")
-    print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
-    print(f"  Frame interval: {ctrl.dwFrameInterval} (100ns units)")
-    print(f"  Max payload size: {ctrl.dwMaxPayloadTransferSize}")
 
     print(f"Initialized Streaming Control:")
     print(f"  Frame size: {ctrl.dwMaxVideoFrameSize} bytes")
@@ -467,47 +464,39 @@ def log_streaming_control(ctrl, prefix=""):
     print(f"  bMaxVersion: {ctrl.bMaxVersion}")
 
     
-def set_video_format(fd, frame_index=1, frame_interval=333333):
-    """Set video format using committed parameters"""
-    global current_format  # Ensure we store the format globally
+def set_video_format(fd):
+    """Set video format to YUYV 640x360"""
+    print("\nSetting video format")
+    global current_format
     
-    print("\n🎥 Configuring Video Format...")
-
     fmt = v4l2_format()
     fmt.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
     fmt.fmt.pix.width = 640
     fmt.fmt.pix.height = 360
     fmt.fmt.pix.pixelformat = V4L2_PIX_FMT_YUYV
     fmt.fmt.pix.field = V4L2_FIELD_NONE
-    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2
+    fmt.fmt.pix.bytesperline = fmt.fmt.pix.width * 2  # 2 bytes per pixel for YUYV
     fmt.fmt.pix.sizeimage = fmt.fmt.pix.bytesperline * fmt.fmt.pix.height
     fmt.fmt.pix.colorspace = V4L2_COLORSPACE_SRGB
     fmt.fmt.pix.xfer_func = V4L2_XFER_FUNC_SRGB
-    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601
+    fmt.fmt.pix.ycbcr_enc = V4L2_YCBCR_ENC_601  # Standard for YUYV
     fmt.fmt.pix.quantization = V4L2_QUANTIZATION_LIM_RANGE
-
+    
     try:
-        print("#### Calling ioctl: VIDIOC_S_FMT\n")
+        print("#### Calling ioctl: VIDIOC_S_FMT\n");
         fcntl.ioctl(fd, VIDIOC_S_FMT, fmt)
-
-        # ✅ Store the current format
-        current_format = fmt.fmt.pix
-
-        print("✅ Video format set successfully:")
+        print("Video format set successfully:")
         print(f"  Width: {fmt.fmt.pix.width}")
         print(f"  Height: {fmt.fmt.pix.height}")
         print(f"  Pixel Format: {hex(fmt.fmt.pix.pixelformat)}")
         print(f"  Bytes per line: {fmt.fmt.pix.bytesperline}")
         print(f"  Size image: {fmt.fmt.pix.sizeimage}")
-        print(f"  Frame Index: {frame_index}")
-        print(f"  Frame Interval: {frame_interval}")
-
+        print(f"  Colorspace: {fmt.fmt.pix.colorspace}")
+        current_format = fmt.fmt.pix  # Store the current format
         return True
     except Exception as e:
-        print(f"❌ Failed to set video format: {e}")
+        print(f"Failed to set video format: {e}")
         return False
-
-
 
 def handle_request(fd, ctrl, req, response):
     print(f"Handling bRequest: 0x{req.bRequest:02x}")
@@ -782,10 +771,6 @@ def handle_setup_event(event):
     print(f"  wIndex:        0x{req.wIndex:04x}")
     print(f"  wLength:       {req.wLength}")
     
-    if state.current_control is None and req.bRequest == UVC_SET_CUR:
-        # Allow direct COMMIT if no control is active
-        state.current_control = (req.wValue >> 8) & 0xFF
-    
     # Parse request type
     request_type = req.bRequestType & USB_TYPE_MASK
     print(f"\n📌 Request Category: 0x{request_type:02x} " + 
@@ -891,7 +876,7 @@ def handle_data_event(event):
     print("\n" + "="*80)
     print("📥 UVC_EVENT_DATA - Processing Streaming Parameters")
     print("="*80)
-  
+    
     if state.current_control is None:
         print("❌ Error: No active control context")
         print("    Current state is invalid - expecting PROBE or COMMIT control")
@@ -919,24 +904,6 @@ def handle_data_event(event):
     try:
         print("\n🔄 Processing Streaming Control Parameters")
         ctrl = uvc_streaming_control.from_buffer_copy(control_data)
-        
-        # ✨ CRITICAL: Validate and set default values
-        if ctrl.dwFrameInterval == 0:
-            print("⚠️ Setting default frame interval (30 FPS)")
-            ctrl.dwFrameInterval = 333333
-        if ctrl.bFormatIndex == 0:
-            print("⚠️ Setting default format index")
-            ctrl.bFormatIndex = 1
-        if ctrl.bFrameIndex == 0:
-            print("⚠️ Setting default frame index")
-            ctrl.bFrameIndex = 1
-        if ctrl.dwMaxVideoFrameSize == 0:
-            print("⚠️ Setting default video frame size")
-            ctrl.dwMaxVideoFrameSize = 640 * 360 * 2
-        if ctrl.dwMaxPayloadTransferSize == 0:
-            print("⚠️ Setting default max payload size")
-            ctrl.dwMaxPayloadTransferSize = 3072
-            
         log_streaming_control(ctrl, "📊 Received Parameters")
 
         # Calculate and log FPS
@@ -945,56 +912,50 @@ def handle_data_event(event):
 
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\n🔵 PROBE Phase - Storing Parameters")
-            memmove(addressof(state.probe_control), addressof(ctrl), sizeof(uvc_streaming_control))
-            memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
+            memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
+            memmove(addressof(state.commit_control), control_data, sizeof(uvc_streaming_control))
             log_streaming_control(state.probe_control, "✅ Updated PROBE State")
             
         elif state.current_control == UVC_VS_COMMIT_CONTROL:
             print("\n🟢 COMMIT Phase - Finalizing Parameters")
 
-            # ✨ CRITICAL: If we haven't done PROBE, initialize default values
-            if not state.probe_control.dwMaxVideoFrameSize:
-                print("⚠️ No PROBE values - initializing defaults")
-                init_streaming_control(state.probe_control)
+            if ctrl.dwMaxPayloadTransferSize == 0:
+                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
+                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
+                ctrl.dwMaxPayloadTransferSize = 3072
 
             memmove(addressof(state.commit_control), addressof(ctrl), sizeof(uvc_streaming_control))
             log_streaming_control(state.commit_control, "✅ Final COMMIT Configuration")
 
-            # Set video format
-            print("\n🎥 Setting Video Format from COMMIT Parameters...")
-            if not set_video_format(fd, state.commit_control.bFrameIndex, state.commit_control.dwFrameInterval):
-                print("❌ Failed to set video format after COMMIT")
-                return None
-            
-            if current_format is None:
-                print("❌ Video format was not set correctly")
-                return None
-
-            # Allocate buffers
-            print("\n✅ Allocating Buffers")
+            print("\n✅ COMMIT Received - Allocating Buffers")
             global buffers
-            buffers = init_video_buffers(fd)
+            buffers = init_video_buffers(fd)  # Allocate buffers **after COMMIT**
             
             if not buffers:
-                print("❌ Failed to allocate buffers")
+                print("❌ Failed to allocate buffers after COMMIT")
                 return None
 
             print(f"✅ Allocated {len(buffers)} buffers")
 
-            # Force stream start
-            print("\n🎥 Starting stream...")
-            handle_streamon_event(None)
+            print("\n🤝 Sending COMMIT Acknowledgment")
+            response = uvc_request_data()
+            response.length = 0
+            print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
+            fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
+            print("✅ COMMIT acknowledged - Ready for streaming")
 
     except Exception as e:
-        print(f"\n❌ Error: {str(e)}")
-        print(f"Type: {type(e).__name__}")
+        print("\n❌ Error Processing Control Data:")
+        print(f"  Exception: {type(e).__name__}")
+        print(f"  Message: {str(e)}")
         return None
 
-    print("\n✅ Clearing control context")
+    print("\n🔄 Clearing control context")
     state.current_control = None
-    
+
     print("="*80 + "\n")
     return None
+
 
 
 
@@ -1166,70 +1127,73 @@ def handle_streamon_event(event):
     """Handle UVC_EVENT_STREAMON"""
     print("\nUVC_EVENT_STREAMON")
     global state
-
+    
     try:
-        # Ensure video format and buffers are set
-        if current_format is None or buffers is None:
-            print("❌ Cannot start streaming: Video format or buffers are not initialized")
-            return None
-
+        # Start the video stream
         buf_type = c_int32(V4L2_BUF_TYPE_VIDEO_OUTPUT)
         print("Starting video stream...")
-        print("#### Calling ioctl: VIDIOC_STREAMON\n")
+        print("#### Calling ioctl: VIDIOC_STREAMON\n");
         fcntl.ioctl(fd, VIDIOC_STREAMON, buf_type)
-        print("✅ Stream started successfully")
-
+        print("Stream started successfully")
+        
+        if not current_format or not buffers:
+            print("Error: Missing format or buffers")
+            return None
+            
         print(f"\nCurrent format:")
         print(f"  Width: {current_format.width}")
         print(f"  Height: {current_format.height}")
         print(f"  Pixel format: {hex(current_format.pixelformat)}")
         print(f"  Bytes per line: {current_format.bytesperline}")
         print(f"  Size image: {current_format.sizeimage}")
-
-        # Use committed frame interval
+        
+        # Use the committed frame interval for FPS
         frame_interval_ns = state.commit_control.dwFrameInterval * 100  # Convert to nanoseconds
         fps = int(1000000000 / frame_interval_ns) if frame_interval_ns > 0 else 30
         print(f"\nUsing committed settings:")
         print(f"  Frame interval: {frame_interval_ns}ns")
         print(f"  Target FPS: {fps}")
-
-        # Queue initial buffers
+        
+        # Queue initial buffers with timing information
         for buf in buffers:
             print(f"\nProcessing buffer {buf['index']}:")
-
+            
             # Fill buffer with test pattern
             bytes_used = generate_test_pattern(
-                buf['mmap'],
-                current_format.width,
+                buf['mmap'], 
+                current_format.width, 
                 current_format.height
             )
-
+            
             v4l2_buf = v4l2_buffer()
             v4l2_buf.type = V4L2_BUF_TYPE_VIDEO_OUTPUT
             v4l2_buf.memory = V4L2_MEMORY_MMAP
             v4l2_buf.index = buf['index']
             v4l2_buf.bytesused = bytes_used
-
+            v4l2_buf.timestamp.tv_sec = 0
+            v4l2_buf.timestamp.tv_usec = 0  # Let kernel set timestamp
+            
             try:
-                print("#### Calling ioctl: VIDIOC_QBUF\n")
+                print("#### Calling ioctl: VIDIOC_QBUF\n");
                 fcntl.ioctl(fd, VIDIOC_QBUF, v4l2_buf)
                 print(f"  Successfully queued buffer {buf['index']}")
             except Exception as e:
-                print(f"  ❌ Failed to queue buffer: {e}")
-
-        # Start streaming thread
+                print(f"  Failed to queue buffer: {e}")
+                print(f"  Error details: {type(e).__name__}")
+        
+        # Start streaming thread with timing control
         state.streaming = True
         print("\nStarting streaming thread...")
         import threading
         thread = threading.Thread(target=streaming_thread, args=(fps,), daemon=True)
         thread.start()
-        print("✅ Streaming thread started with ID:", thread.ident)
-
+        print("Streaming thread started with ID:", thread.ident)
+            
     except Exception as e:
-        print(f"❌ Failed to start stream: {e}")
-
+        print(f"Failed to start stream: {e}")
+        print(f"Error details: {type(e).__name__}")
+    
     return None
-
 
 def streaming_thread(fps):
     """Background thread to handle continuous streaming with proper timing"""
