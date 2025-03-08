@@ -778,27 +778,12 @@ def handle_setup_event(event):
     
     if request_type == USB_TYPE_CLASS:
         cs = (req.wValue >> 8) & 0xFF
-        
-        # Get both bytes from wIndex
-        interface_lsb = req.wIndex & 0xFF
-        interface_msb = (req.wIndex >> 8) & 0xFF
-        
-        # More robust interface detection for Mac/Vision Pro
-        if cs == UVC_VS_PROBE_CONTROL or cs == UVC_VS_COMMIT_CONTROL:
-            # These control selectors are always for streaming interface
-            interface = 1
-        elif interface_lsb != 0:
-            # If LSB is non-zero, use that (Windows style)
-            interface = interface_lsb
-        else:
-            # Otherwise, use MSB but cap at 1 to prevent invalid interface numbers
-            interface = min(interface_msb, 1)
+        interface = req.wIndex & 0xFF
         
         print(f"\n🔧 Class-Specific Request Details:")
         print(f"  Control Selector: 0x{cs:02x} " + 
-            f"({'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT' if cs == UVC_VS_COMMIT_CONTROL else 'OTHER'})")
+              f"({'PROBE' if cs == UVC_VS_PROBE_CONTROL else 'COMMIT' if cs == UVC_VS_COMMIT_CONTROL else 'OTHER'})")
         print(f"  Interface:        {interface} ({'Control' if interface == 0 else 'Streaming' if interface == 1 else 'Unknown'})")
-        print(f"  Interface bytes:  LSB=0x{interface_lsb:02x}, MSB=0x{interface_msb:02x}")
         
         if interface == 0:
             print("\n⚙️ Processing Control Interface Request")
@@ -925,46 +910,6 @@ def handle_data_event(event):
         fps = 1000000/ctrl.dwFrameInterval if ctrl.dwFrameInterval > 0 else 0
         print(f"\n⏱️ Calculated FPS: {fps:.2f}")
 
-        # After parsing the parameters, add robust validation
-        if state.current_control == UVC_VS_PROBE_CONTROL or state.current_control == UVC_VS_COMMIT_CONTROL:
-            # Validate and fix critical UVC streaming parameters
-            
-            # Ensure format index is valid
-            if ctrl.bFormatIndex == 0:
-                print("⚠️ Invalid bFormatIndex detected, setting to default (1)")
-                ctrl.bFormatIndex = 1
-                
-            # Ensure frame index is valid
-            if ctrl.bFrameIndex == 0:
-                print("⚠️ Invalid bFrameIndex detected, setting to default (1)")
-                ctrl.bFrameIndex = 1
-                
-            # Ensure frame interval is valid
-            if ctrl.dwFrameInterval == 0:
-                print("⚠️ Invalid dwFrameInterval detected, setting to default (333333 - 30fps)")
-                ctrl.dwFrameInterval = 333333
-                
-            # Ensure max video frame size is valid
-            if ctrl.dwMaxVideoFrameSize == 0:
-                print("⚠️ Invalid dwMaxVideoFrameSize detected, calculating from format")
-                # Use the current format we set at the beginning
-                ctrl.dwMaxVideoFrameSize = current_format.width * current_format.height * 2  # YUYV = 2 bytes/pixel
-                
-            # Ensure max payload is valid
-            if ctrl.dwMaxPayloadTransferSize == 0:
-                print("⚠️ Invalid dwMaxPayloadTransferSize detected")
-                print("  • Setting to safe default: 3072 (USB 2.0 compatible)")
-                ctrl.dwMaxPayloadTransferSize = 3072
-                
-            # Log corrected parameters
-            print("\n🔧 Corrected Parameters:")
-            print(f"  bFormatIndex: {ctrl.bFormatIndex}")
-            print(f"  bFrameIndex: {ctrl.bFrameIndex}")
-            print(f"  dwFrameInterval: {ctrl.dwFrameInterval} ({1000000/ctrl.dwFrameInterval:.2f} FPS)")
-            print(f"  dwMaxVideoFrameSize: {ctrl.dwMaxVideoFrameSize}")
-        print(f"  dwMaxPayloadTransferSize: {ctrl.dwMaxPayloadTransferSize}")
-
-
         if state.current_control == UVC_VS_PROBE_CONTROL:
             print("\n🔵 PROBE Phase - Storing Parameters")
             memmove(addressof(state.probe_control), control_data, sizeof(uvc_streaming_control))
@@ -998,18 +943,6 @@ def handle_data_event(event):
             print("#### Calling ioctl: UVCIOC_SEND_RESPONSE\n");
             fcntl.ioctl(fd, UVCIOC_SEND_RESPONSE, response)
             print("✅ COMMIT acknowledged - Ready for streaming")
-
-            print("\n🔄 Simulating STREAMON event for macOS compatibility")
-
-            # Instead of calling VIDIOC_STREAMON directly, call our stream handler
-            stream_handler = EVENT_HANDLERS.get(UVC_EVENT_STREAMON)
-            if stream_handler:
-                # Create a simulated event and pass it to the handler
-                simulated_event = v4l2_event()
-                simulated_event.type = UVC_EVENT_STREAMON
-                stream_handler(simulated_event)
-            else:
-                print("⚠️ Unable to simulate STREAMON - handler not found")
 
     except Exception as e:
         print("\n❌ Error Processing Control Data:")
